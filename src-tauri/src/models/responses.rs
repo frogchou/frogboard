@@ -1,5 +1,5 @@
-use super::{error, format_error, ActionInput, Call, Kind, ModelResult};
-use serde_json::{json, Value};
+use super::{error, format_error, ModelResult};
+use serde_json::Value;
 use url::Url;
 
 pub(super) fn chat_endpoint_rejected(body: &[u8]) -> bool {
@@ -22,17 +22,6 @@ pub(super) fn url(endpoint: &Url) -> Url {
         url.set_path(&format!("{base}/responses"));
     }
     url
-}
-
-pub(super) fn body(call: &Call, input: &ActionInput) -> Value {
-    let part = match input.kind {
-        Kind::Text => json!({"type":"input_text","text":input.value}),
-        Kind::Image => json!({"type":"input_image","image_url":input.value}),
-    };
-    json!({
-        "model":call.model, "instructions":call.prompt, "store":false, "stream":true,
-        "input":[{"role":"user","content":[part]}]
-    })
 }
 
 fn output(response: &Value) -> ModelResult<String> {
@@ -105,6 +94,7 @@ pub(super) fn text(bytes: &[u8]) -> ModelResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn outputs_completed_text_once_for_json_and_events() {

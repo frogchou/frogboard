@@ -6,18 +6,27 @@ import HistoryList from './history/HistoryList'
 import GeneralSettings from './general/GeneralSettings'
 import { recordHistory } from './general/preferences'
 import { saveOperation, type Operation } from './history/store'
-import { History, MessageSquarePlus } from 'lucide-react'
+import { History, MessagesSquare, MessageSquarePlus } from 'lucide-react'
+import Conversations from './conversations/Conversations'
+import { useConversations } from './conversations/useConversations'
 import ModelResult from './results/ModelResult'
 import Settings, { listActions, ModelError, runAction, type Action } from './models'
 import ShortcutSettings from './Preferences'
 import { bindDesktop, defaults, errorText, modeNames, native, type Input, type Preferences, type Snapshot } from './desktop'
 import logo from '../assets/frogboard.svg'
 
-type View = 'work' | 'history' | 'editor' | 'models' | 'shortcuts' | 'general'
+const tabs = [
+  { id: 'work', name: '工作台', icon: Clipboard },
+  { id: 'history', name: '历史记录', icon: History },
+  { id: 'chats', name: '会话', icon: MessagesSquare },
+] as const
+type View = typeof tabs[number]['id'] | 'editor' | 'models' | 'shortcuts' | 'general'
 type Reply = { action: string; text: string; busy: boolean; error?: string; errorCode?: string }
 
 export default function App() {
   const [view, setView] = useState<View>('work')
+  const settingsReturn = useRef<View>('work')
+  const chat = useConversations(view === 'chats')
   const [item, setItem] = useState<Snapshot | null>(null)
   const [showTranslation, setShowTranslation] = useState(false)
   const [actions, setActions] = useState<Action[]>([])
@@ -146,13 +155,16 @@ export default function App() {
     await execute(kind === 'ocr' ? 'ocr' : 'image-translate', input, kind === 'ocr' ? '提取文字' : '图片翻译', currentInstruction)
   }
   function openView(next: View) {
+    if (next === 'models' || next === 'general' || next === 'shortcuts') {
+      if (tabs.some(tab => tab.id === view)) settingsReturn.current = view
+    }
     setMenu(false)
     if (reply?.busy) invalidate()
     setView(next)
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || !['work', 'history'].includes(view) || e.isComposing) return
+      if (e.key !== 'Escape' || !tabs.some(tab => tab.id === view) || e.isComposing) return
       if (menu) { setMenu(false); return }
       if (native) {
         if (!e.repeat) void invoke('hide_panel').catch(err => setNotice(errorText(err)))
@@ -173,7 +185,7 @@ export default function App() {
 
   const valid = item && item.kind !== 'empty' ? { kind: item.kind, value: item.value } as Input : null
   const report = (job: Promise<unknown>, ok = '') => void job.then(() => setNotice(ok)).catch(e => setNotice(errorText(e)))
-  const reading = valid?.kind === 'text' && showTranslation
+  const reading = view === 'work' && valid?.kind === 'text' && showTranslation
   const resultCard = valid && reply && <section className="result" aria-live="polite">
     <div className="result-head"><b><Languages size={16}/> {reply.action}</b>
       {reply.busy ? <button onClick={invalidate}>取消</button> : reply.text &&
@@ -194,24 +206,27 @@ export default function App() {
           <button onClick={() => openView('shortcuts')}><Keyboard size={16}/> 快捷键与划词</button>
         </div></>}</div>
     </header>
-    {view === 'general' ? <GeneralSettings onBack={() => openView('work')}/> :
-      view === 'shortcuts' ? <ShortcutSettings current={prefs} onSave={setPrefs} onBack={() => openView('work')}/> :
+    {view === 'general' ? <GeneralSettings onBack={() => openView(settingsReturn.current)}/> :
+      view === 'shortcuts' ? <ShortcutSettings current={prefs} onSave={setPrefs} onBack={() => openView(settingsReturn.current)}/> :
       view === 'models' ? <div className="model-host">
-        <Settings onClose={() => openView('work')}/></div> :
-      <section className="work">
+        <Settings onClose={() => openView(settingsReturn.current)}/></div> :
+      <section className={view === 'chats' ? 'work chat-work' : 'work'}>
         {!reading && <div className="work-tabs" role="tablist" aria-label="工作台视图"
           onKeyDown={e => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
             e.preventDefault()
-            const history = e.key === 'End' || (e.key !== 'Home' && view === 'work')
-            setView(history ? 'history' : 'work')
-            e.currentTarget.querySelectorAll('button')[history ? 1 : 0].focus()
+            const current = tabs.findIndex(tab => tab.id === view)
+            const index = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 :
+              (current + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+            setView(tabs[index].id)
+            e.currentTarget.querySelectorAll('button')[index].focus()
           }}>
-          <button id="current-tab" role="tab" aria-controls="work-panel" aria-selected={view === 'work'} tabIndex={view === 'work' ? 0 : -1} onClick={() => setView('work')}><Clipboard size={15}/>工作台</button>
-          <button id="history-tab" role="tab" aria-controls="work-panel" aria-selected={view === 'history'} tabIndex={view === 'history' ? 0 : -1} onClick={() => setView('history')}><History size={15}/>历史记录</button>
+          {tabs.map(({ id, name, icon: Icon }) => <button key={id} id={id + '-tab'} role="tab" aria-controls="work-panel"
+            aria-selected={view === id} tabIndex={view === id ? 0 : -1} onClick={() => setView(id)}><Icon size={15}/>{name}</button>)}
         </div>}
-        <div id="work-panel" role={reading ? undefined : 'tabpanel'} aria-labelledby={reading ? undefined : view === 'history' ? 'history-tab' : 'current-tab'}>
-        {view === 'history' ? <HistoryList revision={historyRevision} onRestore={restoreOperation}/> : <>
+        <div id="work-panel" role={reading ? undefined : 'tabpanel'} aria-labelledby={reading ? undefined : view + '-tab'}>
+        {view === 'chats' ? <Conversations chat={chat} onSettings={() => openView('models')}/> :
+          view === 'history' ? <HistoryList revision={historyRevision} onRestore={restoreOperation}/> : <>
         <div className="title-line"><div><h1>{reading ? '划词翻译' : '剪贴板工作台'}</h1>
           {!reading && <p>{valid ? valid.kind === 'image' ? '图片快照' : '文字快照' : '读取当前内容，选择下一步操作。'}</p>}</div>
           {reading ? <button onClick={() => setShowTranslation(false)}><ArrowLeft size={16}/>返回工作台</button> :
@@ -234,6 +249,12 @@ export default function App() {
             <button className="instruction-toggle" aria-expanded={showInstruction} onClick={() => setShowInstruction(!showInstruction)}>
               <MessageSquarePlus size={15}/>附加指令
             </button>
+            <button className="instruction-toggle join-chat" onClick={() => {
+              const id = activeId.current
+              void chat.create(valid, currentInstruction).then(() => {
+                if (activeId.current === id) { setShowTranslation(false); setView('chats') }
+              }).catch(e => setNotice(errorText(e)))
+            }}><MessagesSquare size={15}/>加入会话</button>
             {showInstruction && <textarea autoFocus aria-label="附加指令" rows={2} value={instruction}
               placeholder="例如：保留英文术语，用三句话概括。" onChange={e => setInstruction(e.target.value)}/>}
           </div>

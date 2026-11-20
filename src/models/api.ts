@@ -93,17 +93,26 @@ export function modelForAction(settings: ModelSettings, action: Action): Profile
 export async function runAction(
   action: Action | string, input: ActionInput, options: { signal?: AbortSignal; instruction?: string } = {},
 ): Promise<string> {
+  return runRequest('model_action_run', {
+    actionId: typeof action === 'string' ? action : action.id, input, instruction: options.instruction,
+  }, options.signal);
+}
+
+export type ConversationMessage = { role: 'user' | 'assistant'; content: ActionInput[] };
+
+export function runConversation(messages: ConversationMessage[], signal: AbortSignal): Promise<string> {
+  return runRequest('model_conversation_run', { messages }, signal);
+}
+
+async function runRequest(command: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
   const cancelled = () => new ModelError('cancelled', '已取消本次操作。');
-  const { signal } = options;
   if (signal?.aborted) throw cancelled();
   if (!isTauri()) throw new ModelError('desktop', '请在 Windows 桌面应用中运行模型操作。');
   const requestId = crypto.randomUUID();
   const handleAbort = () => { void invoke('model_action_cancel', { requestId }).catch(() => {}); };
   signal?.addEventListener('abort', handleAbort, { once: true });
   try {
-    const value = await invoke<string>('model_action_run', {
-      requestId, actionId: typeof action === 'string' ? action : action.id, input, instruction: options.instruction,
-    });
+    const value = await invoke<string>(command, { requestId, ...args });
     if (signal?.aborted) throw cancelled();
     return value;
   } catch (cause) {

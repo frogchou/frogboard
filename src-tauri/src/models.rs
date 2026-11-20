@@ -1,10 +1,12 @@
+mod conversation;
 mod credentials;
 mod responses;
+use conversation::Message;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{redirect::Policy, Client, StatusCode};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -478,7 +480,21 @@ fn resolve_stored_call(path: &Path, action_id: &str, kind: Kind) -> ModelResult<
         .iter()
         .find(|a| a.id == action_id && a.input == kind)
         .ok_or_else(|| error("action", "此快捷操作不可用于当前内容。"))?;
-    let profile = model_for_action(&store.settings, action).ok_or_else(|| {
+    profile_call(
+        &store,
+        model_for_action(&store.settings, action),
+        kind,
+        &action.prompt,
+    )
+}
+
+fn profile_call(
+    store: &Store,
+    profile: Option<&Profile>,
+    kind: Kind,
+    prompt: &str,
+) -> ModelResult<Call> {
+    let profile = profile.ok_or_else(|| {
         error(
             "unconfigured",
             match kind {
@@ -503,7 +519,7 @@ fn resolve_stored_call(path: &Path, action_id: &str, kind: Kind) -> ModelResult<
         url,
         key,
         model: profile.model.trim().to_owned(),
-        prompt: action.prompt.clone(),
+        prompt: prompt.to_owned(),
     })
 }
 
@@ -561,6 +577,10 @@ static RESPONSES_ROUTES: LazyLock<Mutex<HashSet<(Url, String)>>> =
 
 async fn request(call: Call, input: ActionInput) -> ModelResult<String> {
     validate_input(&input)?;
+    request_messages(call, &[Message::single(input)]).await
+}
+
+async fn request_messages(call: Call, messages: &[Message]) -> ModelResult<String> {
     let mut builder = Client::builder()
         .redirect(Policy::none())
         .timeout(Duration::from_secs(90))
@@ -573,11 +593,11 @@ async fn request(call: Call, input: ActionInput) -> ModelResult<String> {
     let direct = call.url.path().ends_with("/responses");
     let known = call.auto_protocol && RESPONSES_ROUTES.lock().unwrap().contains(&route);
     if direct || known {
-        return send_request(&client, &call, &input, true).await;
+        return send_request(&client, &call, messages, true).await;
     }
-    match send_request(&client, &call, &input, false).await {
+    match send_request(&client, &call, messages, false).await {
         Err(e) if call.auto_protocol && e.code == "chat_unsupported" => {
-            let text = send_request(&client, &call, &input, true).await?;
+            let text = send_request(&client, &call, messages, true).await?;
             RESPONSES_ROUTES.lock().unwrap().insert(route);
             Ok(text)
         }
@@ -588,21 +608,15 @@ async fn request(call: Call, input: ActionInput) -> ModelResult<String> {
 async fn send_request(
     client: &Client,
     call: &Call,
-    input: &ActionInput,
+    messages: &[Message],
     use_responses: bool,
 ) -> ModelResult<String> {
-    let (url, body) = if use_responses {
-        (responses::url(&call.url), responses::body(call, input))
+    let url = if use_responses {
+        responses::url(&call.url)
     } else {
-        let content = match input.kind {
-            Kind::Text => json!(input.value),
-            Kind::Image => json!([{"type":"image_url","image_url":{"url":input.value}}]),
-        };
-        (
-            call.url.clone(),
-            json!({ "model":call.model,"stream":false,"messages":[{"role":"system","content":call.prompt},{"role":"user","content":content}] }),
-        )
+        call.url.clone()
     };
+    let body = conversation::body(call, messages, use_responses);
     let mut req = client.post(url).json(&body);
     if let Some(key) = &call.key {
         req = req.bearer_auth(key);
@@ -670,6 +684,50 @@ pub async fn model_action_run(
     input: ActionInput,
     instruction: Option<String>,
 ) -> ModelResult<String> {
+    run_cancellable(request_id, async {
+        let call =
+            resolve_call(&app, &action_id, input.kind)?.with_instruction(instruction.as_deref());
+        request(call, input).await
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn model_conversation_run(
+    app: AppHandle,
+    request_id: String,
+    messages: Vec<Message>,
+) -> ModelResult<String> {
+    run_cancellable(request_id, async {
+        let kind = conversation::validate(&messages)?;
+        let call = {
+            let _guard = SETTINGS_LOCK.lock().map_err(|_| storage_error())?;
+            let store = load(&settings_path(&app)?)?;
+            let id = match kind {
+                Kind::Text => &store.settings.default_text,
+                Kind::Image => &store.settings.default_vision,
+            };
+            let profile = store
+                .settings
+                .profiles
+                .iter()
+                .find(|p| Some(&p.id) == id.as_ref() && (kind != Kind::Image || p.vision));
+            profile_call(
+                &store,
+                profile,
+                kind,
+                "你是青蛙跳板的会话助手。根据用户提供的材料、问题和上文作答。",
+            )?
+        };
+        request_messages(call, &messages).await
+    })
+    .await
+}
+
+async fn run_cancellable(
+    request_id: String,
+    work: impl std::future::Future<Output = ModelResult<String>>,
+) -> ModelResult<String> {
     if !valid_id(&request_id) {
         return Err(error("input", "操作编号无效。"));
     }
@@ -684,11 +742,6 @@ pub async fn model_action_run(
         }
         requests.active.insert(request_id.clone(), sender);
     }
-    let work = async {
-        let call =
-            resolve_call(&app, &action_id, input.kind)?.with_instruction(instruction.as_deref());
-        request(call, input).await
-    };
     let result =
         tokio::select! { biased; _ = receiver => Err(cancelled()), result = work => result };
     REQUESTS
@@ -719,6 +772,7 @@ pub async fn model_action_cancel(request_id: String) -> ModelResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::io::{BufRead, BufReader, Read};
     use std::net::TcpListener;
 

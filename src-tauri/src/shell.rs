@@ -241,6 +241,7 @@ pub fn run() {
             models::model_settings_load,
             models::model_settings_save,
             models::model_action_run,
+            models::model_conversation_run,
             models::model_action_cancel
         ])
         .run(context)
