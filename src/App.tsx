@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { ArrowDownLeft, Check, ChevronDown, Clipboard, Copy, FileImage, FileText, Keyboard, Languages, PenLine, RefreshCw, Save, Scan, Settings2, X } from 'lucide-react'
 import Editor from './editor/Editor'
+import HistoryList from './history/HistoryList'
+import { saveOperation, type Operation } from './history/store'
+import { History, MessageSquarePlus } from 'lucide-react'
 import ModelResult from './results/ModelResult'
 import Settings, { listActions, ModelError, runAction, type Action } from './models'
 import ShortcutSettings from './Preferences'
 import { bindDesktop, defaults, errorText, modeNames, native, type Input, type Preferences, type Snapshot } from './desktop'
 import logo from '../assets/frogboard.svg'
 
-type View = 'work' | 'editor' | 'models' | 'shortcuts'
+type View = 'work' | 'history' | 'editor' | 'models' | 'shortcuts'
 type Reply = { action: string; text: string; busy: boolean; error?: string; errorCode?: string }
 
 export default function App() {
@@ -19,6 +22,9 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [prefs, setPrefs] = useState<Preferences>(defaults)
   const [menu, setMenu] = useState(false)
+  const [instruction, setInstruction] = useState('')
+  const [showInstruction, setShowInstruction] = useState(false)
+  const [historyRevision, setHistoryRevision] = useState(0)
   const request = useRef<AbortController | null>(null)
   const activeId = useRef<number | null>(null)
   const lastAction = useRef('')
@@ -29,7 +35,7 @@ export default function App() {
     request.current = null
     setReply(null)
   }
-  async function execute(action: string, input: Input, name = '翻译') {
+  async function execute(action: string, input: Input, name = '翻译', extra = '') {
     request.current?.abort()
     const controller = new AbortController()
     request.current = controller
@@ -37,8 +43,15 @@ export default function App() {
     setNotice('')
     setReply({ action: name, text: '', busy: true })
     try {
-      const text = await runAction(action, input, { signal: controller.signal })
-      if (request.current === controller) setReply({ action: name, text, busy: false })
+      const text = await runAction(action, input, { signal: controller.signal, instruction: extra })
+      if (request.current !== controller) return
+      setReply({ action: name, text, busy: false })
+      try {
+        await saveOperation({ input, result: text, actionId: action, actionName: name, instruction: extra, completedAt: Date.now() })
+        setHistoryRevision(n => n + 1)
+      } catch {
+        setNotice('本次结果已生成，但历史记录保存失败，请检查本机存储空间。')
+      }
     } catch (e) {
       if (request.current === controller && !controller.signal.aborted)
         setReply({ action: name, text: '', busy: false, error: errorText(e), errorCode: e instanceof ModelError ? e.code : undefined })
@@ -50,10 +63,21 @@ export default function App() {
     setMenu(false)
     setNotice('')
     setItem(next)
+    setInstruction('')
+    setShowInstruction(false)
     const overlay = next.kind === 'image' && (next.mode === 'capture' || next.mode === 'translate')
     setView(overlay ? 'editor' : 'work')
     if (next.kind === 'text' && (next.mode === 'translate' || next.mode === 'selection'))
       void execute('translate', { kind: 'text', value: next.value })
+  }
+  function restoreOperation(operation: Operation, id: number) {
+    // Native request IDs are positive. Restored snapshots stay local, including
+    // when the user reopens an image in the annotation editor.
+    accept({ ...operation.input, id: -id, mode: 'clipboard' })
+    setInstruction(operation.instruction)
+    setShowInstruction(Boolean(operation.instruction))
+    lastAction.current = operation.actionId
+    setReply({ action: operation.actionName, text: operation.result, busy: false })
   }
   useEffect(() => {
     let disposed = false
@@ -106,12 +130,14 @@ export default function App() {
       setNotice('已复制标注后的图片')
       return
     }
-    const current = await invoke<boolean>('finish_editor', { id: item.id, hide: false })
-    if (!current || activeId.current !== item.id) return
+    if (item.mode !== 'clipboard') {
+      const current = await invoke<boolean>('finish_editor', { id: item.id, hide: false })
+      if (!current || activeId.current !== item.id) return
+    }
     const input = { kind: 'image', value: png } as const
     setItem({ ...input, mode: 'clipboard', id: item?.id ?? 0 })
     setView('work')
-    await execute(kind === 'ocr' ? 'ocr' : 'image-translate', input, kind === 'ocr' ? '提取文字' : '图片翻译')
+    await execute(kind === 'ocr' ? 'ocr' : 'image-translate', input, kind === 'ocr' ? '提取文字' : '图片翻译', currentInstruction)
   }
   function openView(next: View) {
     setMenu(false)
@@ -120,7 +146,7 @@ export default function App() {
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || view !== 'work' || e.isComposing) return
+      if (e.key !== 'Escape' || !['work', 'history'].includes(view) || e.isComposing) return
       if (menu) { setMenu(false); return }
       if (native) {
         if (!e.repeat) void invoke('hide_panel').catch(err => setNotice(errorText(err)))
@@ -133,6 +159,7 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [view, menu])
+  const currentInstruction = showInstruction ? instruction.trim() : ''
   if (view === 'editor' && item?.kind === 'image')
     return <Editor key={item.id} image={item.value} cropFirst={item.mode !== 'clipboard'}
       windowBounds={item.windowBounds} quickTranslate={item.mode === 'translate'} onExport={exportImage}
@@ -149,7 +176,7 @@ export default function App() {
     {reply.busy ? <p className="waiting">正在等待模型响应…</p> : reply.error ? <>
       <p>{reply.error}</p><div className="line-actions">{['unconfigured', 'profile', 'auth', 'credential', 'endpoint'].includes(reply.errorCode ?? '') &&
         <button onClick={() => openView('models')}>模型设置</button>}
-      <button onClick={() => execute(lastAction.current, valid, reply.action)}>重试</button></div>
+      <button onClick={() => execute(lastAction.current, valid, reply.action, currentInstruction)}>重试</button></div>
     </> : <ModelResult text={reply.text}/>}
   </section>
   return <main className="frog-shell">
@@ -164,6 +191,19 @@ export default function App() {
       view === 'models' ? <div className="model-host">
         <Settings onClose={() => openView('work')}/></div> :
       <section className="work">
+        {!reading && <div className="work-tabs" role="tablist" aria-label="工作台视图"
+          onKeyDown={e => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
+            e.preventDefault()
+            const history = e.key === 'End' || (e.key !== 'Home' && view === 'work')
+            setView(history ? 'history' : 'work')
+            e.currentTarget.querySelectorAll('button')[history ? 1 : 0].focus()
+          }}>
+          <button id="current-tab" role="tab" aria-controls="work-panel" aria-selected={view === 'work'} tabIndex={view === 'work' ? 0 : -1} onClick={() => setView('work')}><Clipboard size={15}/>工作台</button>
+          <button id="history-tab" role="tab" aria-controls="work-panel" aria-selected={view === 'history'} tabIndex={view === 'history' ? 0 : -1} onClick={() => setView('history')}><History size={15}/>历史记录</button>
+        </div>}
+        <div id="work-panel" role={reading ? undefined : 'tabpanel'} aria-labelledby={reading ? undefined : view === 'history' ? 'history-tab' : 'current-tab'}>
+        {view === 'history' ? <HistoryList revision={historyRevision} onRestore={restoreOperation}/> : <>
         <div className="title-line"><div><h1>{reading ? '划词翻译' : '剪贴板工作台'}</h1>
           {!reading && <p>{valid ? valid.kind === 'image' ? '图片快照' : '文字快照' : '读取当前内容，选择下一步操作。'}</p>}</div>
           <button className="circle" title="重新读取剪贴板" aria-label="重新读取剪贴板" onClick={() => trigger('clipboard')}><RefreshCw size={17}/></button></div>
@@ -181,6 +221,13 @@ export default function App() {
           {reading && resultCard}
           {reading ? <details key={item?.id} className="preview original"><summary>查看原文</summary><pre>{valid.value}</pre></details> :
             <div className="preview" aria-label="当前输入">{valid.kind === 'image' ? <img alt="本次操作的图片" src={valid.value}/> : <pre>{valid.value}</pre>}</div>}
+          <div className="instruction">
+            <button className="instruction-toggle" aria-expanded={showInstruction} onClick={() => setShowInstruction(!showInstruction)}>
+              <MessageSquarePlus size={15}/>附加指令
+            </button>
+            {showInstruction && <textarea autoFocus aria-label="附加指令" rows={2} value={instruction}
+              placeholder="例如：保留英文术语，用三句话概括。" onChange={e => setInstruction(e.target.value)}/>}
+          </div>
           <div className="action-bar" ref={actionBar} onKeyDown={e => {
             if (!['ArrowRight','ArrowLeft','ArrowDown','ArrowUp'].includes(e.key)) return
             const buttons = Array.from(actionBar.current?.querySelectorAll('button') ?? [])
@@ -189,10 +236,12 @@ export default function App() {
           }}>
             {valid.kind === 'image' && <><button onClick={() => { invalidate(); setView('editor') }}><PenLine size={15}/> 继续标注</button>
               <button onClick={() => report(invoke('save_png', { png: valid.value }))}><Save size={15}/> 保存 PNG</button></>}
-            {actions.map(a => <button key={a.id} onClick={() => execute(a.id, valid, a.name)}>{a.name}</button>)}
+            {actions.map(a => <button key={a.id} onClick={() => execute(a.id, valid, a.name, currentInstruction)}>{a.name}</button>)}
           </div>
           {!reading && resultCard}
         </>}
+        </>}
+        </div>
       </section>}
     {view === 'work' && <footer className="status-line"><span>{valid ? valid.kind === 'text' ? <FileText size={13}/> : <FileImage size={13}/> : <Check size={13}/>}
       {valid ? valid.kind === 'text' ? `${Array.from(valid.value).length} 字符` : '图片' : '工作台就绪'}</span>

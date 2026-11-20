@@ -91,7 +91,7 @@ export function modelForAction(settings: ModelSettings, action: Action): Profile
 }
 
 export async function runAction(
-  action: Action | string, input: ActionInput, options: { signal?: AbortSignal } = {},
+  action: Action | string, input: ActionInput, options: { signal?: AbortSignal; instruction?: string } = {},
 ): Promise<string> {
   const cancelled = () => new ModelError('cancelled', '已取消本次操作。');
   const { signal } = options;
@@ -102,7 +102,7 @@ export async function runAction(
   signal?.addEventListener('abort', handleAbort, { once: true });
   try {
     const value = await invoke<string>('model_action_run', {
-      requestId, actionId: typeof action === 'string' ? action : action.id, input,
+      requestId, actionId: typeof action === 'string' ? action : action.id, input, instruction: options.instruction,
     });
     if (signal?.aborted) throw cancelled();
     return value;

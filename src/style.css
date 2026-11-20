@@ -33,6 +33,22 @@ button:disabled { cursor: wait; opacity: .6; }
 .menu-list button { width: 100%; border: 0; justify-content: flex-start; }
 .work, .pref-screen, .model-host { flex: 1; min-height: 0; overflow: auto; padding: 24px clamp(18px, 4vw, 38px); }
 .work { width: min(100%, 950px); margin: auto; }
+.work-tabs { display: flex; gap: 12px; border-bottom: 1px solid #d4dccd; margin-bottom: 18px; }
+.work-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 5px 2px 8px; color: #617162; }
+.work-tabs button[aria-selected=true] { border-bottom-color: #2b6d50; color: #204b39; font-weight: 650; }
+.instruction { margin: 9px 0; }
+.instruction .instruction-toggle { padding: 3px 7px; font-size: 13px; }
+.instruction-toggle[aria-expanded=true] { background: #e9eedf; }
+.instruction textarea { display: block; width: 100%; margin-top: 7px; resize: vertical; min-height: 54px; border: 1px solid #bac9b9; border-radius: 8px; padding: 8px 10px; color: inherit; background: #fff; }
+.history-list { list-style: none; padding: 0; margin: 16px 0; border: 1px solid #d4dccd; border-radius: 10px; overflow: hidden; }
+.history-list li + li { border-top: 1px solid #dce2d6; }
+.history-list button { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; text-align: left; padding: 12px; border: 0; border-radius: 0; }
+.history-list button:focus-visible { outline-offset: -3px; }
+.history-kind { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #edf2e8; }
+.history-summary { min-width: 0; }
+.history-summary > * { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.history-summary span, .history-list time { color: #617162; font-size: 12px; }
+.history-empty { text-align: center; margin: 36px 0; color: #617162; }
 .title-line, .result-head, .status-line { display: flex; justify-content: space-between; align-items: center; }
 .title-line h1, .pref-screen h1 { font-size: clamp(23px, 4vw, 30px); letter-spacing: -.045em; margin: 0; line-height: 1.35; }
 .title-line p, .pref-screen > p { margin: 5px 0 0; color: #607163; }

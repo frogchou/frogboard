@@ -439,6 +439,16 @@ struct Call {
     prompt: String,
 }
 
+impl Call {
+    fn with_instruction(mut self, instruction: Option<&str>) -> Self {
+        if let Some(text) = instruction.map(str::trim).filter(|s| !s.is_empty()) {
+            self.prompt.push_str("\n\n本次操作的附加指令：\n");
+            self.prompt.push_str(text);
+        }
+        self
+    }
+}
+
 fn model_for_action<'a>(settings: &'a Settings, action: &Action) -> Option<&'a Profile> {
     let default = match action.input {
         Kind::Text => &settings.default_text,
@@ -658,6 +668,7 @@ pub async fn model_action_run(
     request_id: String,
     action_id: String,
     input: ActionInput,
+    instruction: Option<String>,
 ) -> ModelResult<String> {
     if !valid_id(&request_id) {
         return Err(error("input", "操作编号无效。"));
@@ -673,7 +684,11 @@ pub async fn model_action_run(
         }
         requests.active.insert(request_id.clone(), sender);
     }
-    let work = async { request(resolve_call(&app, &action_id, input.kind)?, input).await };
+    let work = async {
+        let call =
+            resolve_call(&app, &action_id, input.kind)?.with_instruction(instruction.as_deref());
+        request(call, input).await
+    };
     let result =
         tokio::select! { biased; _ = receiver => Err(cancelled()), result = work => result };
     REQUESTS
@@ -878,13 +893,20 @@ mod tests {
                 assert_eq!(request["model"], "test-vision");
                 let (status, response) = if step == 0 {
                     assert!(headers[0].starts_with("POST /gateway/v1/chat/completions "));
+                    assert_eq!(
+                        request["messages"][0]["content"],
+                        "test instruction\n\n本次操作的附加指令：\n保留术语"
+                    );
                     (
                         "500 Internal Server Error",
                         json!({"error":{"code":"convert_request_failed","message":"codex channel: /v1/chat/completions endpoint not supported (request id: fixture)"}}),
                     )
                 } else {
                     assert!(headers[0].starts_with("POST /gateway/v1/responses "));
-                    assert_eq!(request["instructions"], "test instruction");
+                    assert_eq!(
+                        request["instructions"],
+                        "test instruction\n\n本次操作的附加指令：\n保留术语"
+                    );
                     assert_eq!(request["store"], false);
                     let part = &request["input"][0]["content"][0];
                     if step == 1 {
@@ -907,7 +929,7 @@ mod tests {
         });
         for (kind, value) in [(Kind::Text, "Hello"), (Kind::Image, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6YkAAAAASUVORK5CYII=")] {
             let call = Call {url:url.clone(),auto_protocol:true,key:None,model:"test-vision".into(),prompt:"test instruction".into()};
-            assert_eq!(request(call, ActionInput {kind,value:value.into()}).await.unwrap(), "success");
+            assert_eq!(request(call.with_instruction(Some(" 保留术语 ")), ActionInput {kind,value:value.into()}).await.unwrap(), "success");
         }
         server.join().unwrap();
     }
