@@ -1,6 +1,8 @@
 mod capture;
 mod clipboard;
 mod selection;
+#[cfg(test)]
+mod window_tests;
 
 use serde::Serialize;
 use std::{
@@ -179,13 +181,21 @@ fn reveal(window: &WebviewWindow) -> Result<(), String> {
     window.show().map_err(err)?;
     window.set_focus().map_err(err)
 }
+pub fn reopen(app: &AppHandle) -> Result<(), String> {
+    let window = main_window(app)?;
+    if !window.is_visible().map_err(err)? {
+        restore(&window)?;
+    }
+    reveal(&window)
+}
 #[tauri::command]
 pub fn hide_panel(app: AppHandle) -> Result<(), String> {
-    next_request();
+    let id = next_request();
     let window = main_window(&app)?;
-    let restored = restore(&window);
+    // Restoring a maximized workbench can show its HWND. Leave the layout
+    // alone until an entry point actually needs the workbench again.
     window.hide().map_err(err)?;
-    restored
+    window.emit("frog-dismiss", id).map_err(err)
 }
 #[tauri::command]
 pub fn finish_editor(app: AppHandle, id: u32, hide: bool) -> Result<bool, String> {
@@ -193,10 +203,10 @@ pub fn finish_editor(app: AppHandle, id: u32, hide: bool) -> Result<bool, String
         return Ok(false);
     }
     let window = main_window(&app)?;
-    restore(&window)?;
     if hide {
         window.hide().map_err(err)?;
     } else {
+        restore(&window)?;
         reveal(&window)?;
     }
     Ok(true)

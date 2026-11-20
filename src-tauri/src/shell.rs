@@ -132,14 +132,17 @@ fn open_input(app: AppHandle, mode: String) -> Result<(), String> {
     }
 }
 
+pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        api.prevent_close();
+        let _ = desktop::hide_panel(window.app_handle().clone());
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
+            let _ = desktop::reopen(app);
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(Shell::default())
@@ -181,13 +184,7 @@ pub fn run() {
                 .build(app)?;
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = desktop::hide_panel(window.app_handle().clone());
-                let _ = window.emit("frog-dismiss", ());
-            }
-        })
+        .on_window_event(on_window_event)
         .invoke_handler(tauri::generate_handler![
             open_input,
             get_preferences,

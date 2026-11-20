@@ -121,10 +121,13 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || view !== 'work' || e.isComposing) return
       if (menu) { setMenu(false); return }
+      if (native) {
+        if (!e.repeat) void invoke('hide_panel').catch(err => setNotice(errorText(err)))
+        return
+      }
       invalidate()
       activeId.current = null
       setItem(null)
-      if (native) void invoke('hide_panel').catch(err => setNotice(errorText(err)))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

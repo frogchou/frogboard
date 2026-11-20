@@ -38,7 +38,11 @@ export async function bindDesktop(
       onError(message)
     }),
     listen<string>('frog-error', event => onError(event.payload)),
-    listen('frog-dismiss', onDismiss),
+    listen<number>('frog-dismiss', ({ payload: id }) => {
+      if (id <= lastId) return
+      lastId = id
+      onDismiss()
+    }),
   ])
   try { accept(await invoke<Snapshot | null>('pending_input')) }
   catch (e) { onError(errorText(e)) }
