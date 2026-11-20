@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { ArrowDownLeft, Check, ChevronDown, Clipboard, Copy, FileImage, FileText, Keyboard, Languages, PenLine, RefreshCw, Save, Scan, Settings2, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowLeft, Check, ChevronDown, Clipboard, Copy, FileImage, FileText, Keyboard, Languages, PenLine, RefreshCw, Save, Scan, Settings2, X } from 'lucide-react'
 import Editor from './editor/Editor'
 import HistoryList from './history/HistoryList'
 import { saveOperation, type Operation } from './history/store'
@@ -17,6 +17,7 @@ type Reply = { action: string; text: string; busy: boolean; error?: string; erro
 export default function App() {
   const [view, setView] = useState<View>('work')
   const [item, setItem] = useState<Snapshot | null>(null)
+  const [showTranslation, setShowTranslation] = useState(false)
   const [actions, setActions] = useState<Action[]>([])
   const [reply, setReply] = useState<Reply | null>(null)
   const [notice, setNotice] = useState('')
@@ -66,8 +67,10 @@ export default function App() {
     setInstruction('')
     setShowInstruction(false)
     const overlay = next.kind === 'image' && (next.mode === 'capture' || next.mode === 'translate')
+    const translation = next.kind === 'text' && (next.mode === 'translate' || next.mode === 'selection')
+    setShowTranslation(translation)
     setView(overlay ? 'editor' : 'work')
-    if (next.kind === 'text' && (next.mode === 'translate' || next.mode === 'selection'))
+    if (translation)
       void execute('translate', { kind: 'text', value: next.value })
   }
   function restoreOperation(operation: Operation, id: number) {
@@ -167,7 +170,7 @@ export default function App() {
 
   const valid = item && item.kind !== 'empty' ? { kind: item.kind, value: item.value } as Input : null
   const report = (job: Promise<unknown>, ok = '') => void job.then(() => setNotice(ok)).catch(e => setNotice(errorText(e)))
-  const reading = valid?.kind === 'text' && (item?.mode === 'selection' || item?.mode === 'translate')
+  const reading = valid?.kind === 'text' && showTranslation
   const resultCard = valid && reply && <section className="result" aria-live="polite">
     <div className="result-head"><b><Languages size={16}/> {reply.action}</b>
       {reply.busy ? <button onClick={invalidate}>取消</button> : reply.text &&
@@ -206,7 +209,8 @@ export default function App() {
         {view === 'history' ? <HistoryList revision={historyRevision} onRestore={restoreOperation}/> : <>
         <div className="title-line"><div><h1>{reading ? '划词翻译' : '剪贴板工作台'}</h1>
           {!reading && <p>{valid ? valid.kind === 'image' ? '图片快照' : '文字快照' : '读取当前内容，选择下一步操作。'}</p>}</div>
-          <button className="circle" title="重新读取剪贴板" aria-label="重新读取剪贴板" onClick={() => trigger('clipboard')}><RefreshCw size={17}/></button></div>
+          {reading ? <button onClick={() => setShowTranslation(false)}><ArrowLeft size={16}/>返回工作台</button> :
+            <button className="circle" title="重新读取剪贴板" aria-label="重新读取剪贴板" onClick={() => trigger('clipboard')}><RefreshCw size={17}/></button>}</div>
         {notice && <div className="notice" role="status">{notice}<button aria-label="关闭提示" onClick={() => setNotice('')}><X size={14}/></button></div>}
         {!valid ? <>
           <div className="empty-board"><div className="empty-icon"><Clipboard size={33} strokeWidth={1.6}/></div>

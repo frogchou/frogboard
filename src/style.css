@@ -42,12 +42,13 @@ button:disabled { cursor: wait; opacity: .6; }
 .instruction textarea { display: block; width: 100%; margin-top: 7px; resize: vertical; min-height: 54px; border: 1px solid #bac9b9; border-radius: 8px; padding: 8px 10px; color: inherit; background: #fff; }
 .history-list { list-style: none; padding: 0; margin: 16px 0; border: 1px solid #d4dccd; border-radius: 10px; overflow: hidden; }
 .history-list li + li { border-top: 1px solid #dce2d6; }
-.history-list button { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; text-align: left; padding: 12px; border: 0; border-radius: 0; }
+.history-list button { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; text-align: left; padding: 12px 15px; border: 0; border-radius: 0; }
 .history-list button:focus-visible { outline-offset: -3px; }
-.history-kind { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #edf2e8; }
-.history-summary { min-width: 0; }
-.history-summary > * { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.history-summary span, .history-list time { color: #617162; font-size: 12px; }
+.history-summary { min-width: 0; display: grid; justify-items: start; gap: 6px; }
+.history-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; overflow-wrap: anywhere; font-size: 16px; font-weight: 550; line-height: 1.45; }
+.history-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: #617162; overflow-wrap: anywhere; }
+.history-thumbnail { display: block; max-width: min(100%, 220px); max-height: 84px; object-fit: contain; border-radius: 4px; }
+.history-image-placeholder { display: inline-flex; align-items: center; gap: 6px; min-height: 42px; }
 .history-empty { text-align: center; margin: 36px 0; color: #617162; }
 .title-line, .result-head, .status-line { display: flex; justify-content: space-between; align-items: center; }
 .title-line h1, .pref-screen h1 { font-size: clamp(23px, 4vw, 30px); letter-spacing: -.045em; margin: 0; line-height: 1.35; }

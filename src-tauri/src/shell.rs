@@ -127,7 +127,8 @@ fn save_preferences(
 #[tauri::command]
 fn open_input(app: AppHandle, mode: String) -> Result<(), String> {
     match mode.as_str() {
-        "clipboard" | "capture" | "translate" => desktop::start(&app, &mode),
+        "clipboard" => desktop::refresh_clipboard(&app),
+        "capture" | "translate" => desktop::start(&app, &mode),
         _ => Err("未知入口".into()),
     }
 }

@@ -14,6 +14,7 @@ export type HistoryRow = {
   actionName: string
   kind: Input['kind']
   preview: string
+  thumbnail?: string
   completedAt: number
 }
 
@@ -38,8 +39,8 @@ function openDatabase() {
   return database
 }
 
-// Index and payload are committed and evicted together. Browsing the list
-// reads only the short previews, even when all thirty inputs are large images.
+// Index and payload are committed and evicted together. Cached previews can
+// be listed without loading the original images.
 export async function saveOperation(operation: Operation): Promise<void> {
   const db = await openDatabase()
   return new Promise((resolve, reject) => {
@@ -48,8 +49,8 @@ export async function saveOperation(operation: Operation): Promise<void> {
     tx.onabort = () => reject(tx.error ?? new Error('历史记录写入中断'))
     const rows = tx.objectStore('rows')
     const details = tx.objectStore('operations')
-    const { actionName, completedAt, input, result } = operation
-    const preview = (input.kind === 'text' ? input.value : result).trim().slice(0, 180)
+    const { actionName, completedAt, input } = operation
+    const preview = input.kind === 'text' ? input.value.trim().slice(0, 180) : ''
     const add = rows.add({ actionName, completedAt, kind: input.kind, preview })
     add.onsuccess = () => {
       details.add(operation, add.result)
@@ -81,4 +82,28 @@ export async function loadOperation(id: number): Promise<Operation> {
   const operation = await read(db.transaction('operations').objectStore('operations').get(id))
   if (!operation) throw new Error('这条记录已移出最近 30 条操作。')
   return operation
+}
+
+// Generate on first use so existing records get the same preview as new ones.
+export async function loadThumbnail(id: number): Promise<string> {
+  const { input } = await loadOperation(id)
+  const image = new Image()
+  image.src = input.value
+  await image.decode()
+  const scale = Math.min(1, 360 / image.naturalWidth, 168 / image.naturalHeight)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('无法生成图片预览')
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  const thumbnail = canvas.toDataURL('image/webp', .85)
+  const db = await openDatabase()
+  const rows = db.transaction('rows', 'readwrite').objectStore('rows')
+  const readRow = rows.get(id)
+  readRow.onsuccess = () => {
+    // The record may have been evicted while the image was decoding.
+    if (readRow.result) rows.put({ ...readRow.result, thumbnail })
+  }
+  return thumbnail
 }

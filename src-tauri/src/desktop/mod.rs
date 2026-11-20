@@ -228,6 +228,10 @@ pub fn start(app: &AppHandle, mode: &str) -> Result<(), String> {
     start_worker(app, mode, None)
 }
 
+pub fn refresh_clipboard(app: &AppHandle) -> Result<(), String> {
+    start_worker(app, "refresh", None)
+}
+
 fn start_worker(app: &AppHandle, mode: &'static str, text: Option<String>) -> Result<(), String> {
     let window = main_window(app)?;
     let id = next_request();
@@ -242,8 +246,10 @@ fn start_worker(app: &AppHandle, mode: &'static str, text: Option<String>) -> Re
             }
             if let Err(error) = run(&window, id, mode, text) {
                 let _ = with_current_window(&window, id, move |target| {
-                    restore(target)?;
-                    reveal(target)?;
+                    if mode != "refresh" {
+                        restore(target)?;
+                        reveal(target)?;
+                    }
                     target.emit("frog-input-error", (id, error)).map_err(err)
                 });
             }
@@ -264,7 +270,7 @@ fn run(
     let mut fullscreen = None;
     let content = match mode {
         "selection" => Content::Text(text.ok_or("选区为空")?),
-        "clipboard" => clipboard::read(native_owner(window)?)?,
+        "clipboard" | "refresh" => clipboard::read(native_owner(window)?)?,
         _ => {
             let point = capture::cursor()?;
             let selected = if mode == "translate" {
@@ -302,6 +308,19 @@ fn run(
     };
     if !current(id) {
         return Ok(());
+    }
+    if mode == "refresh" {
+        // The workbench is already visible. Only replace its input snapshot.
+        return publish(
+            window,
+            FrogInput {
+                id,
+                kind,
+                mode: "clipboard",
+                value,
+                window_bounds: bounds,
+            },
+        );
     }
     if !with_current_window(window, id, move |target| {
         if let Some(point) = fullscreen {
