@@ -1,0 +1,6 @@
+{
+  "identifier": "desktop",
+  "description": "Local FrogBoard interface",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

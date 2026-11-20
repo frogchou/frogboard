@@ -46,3 +46,7 @@ next-env.d.ts
 .eslintcache
 .turbo
 .swc
+/dist/
+/src-tauri/target/
+/src-tauri/gen/
+/debug.log
