@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { ArrowDownLeft, ArrowLeft, Check, ChevronDown, Clipboard, Copy, FileImage, FileText, Keyboard, Languages, PenLine, RefreshCw, Save, Scan, Settings2, X } from 'lucide-react'
 import Editor from './editor/Editor'
 import HistoryList from './history/HistoryList'
+import GeneralSettings from './general/GeneralSettings'
+import { recordHistory } from './general/preferences'
 import { saveOperation, type Operation } from './history/store'
 import { History, MessageSquarePlus } from 'lucide-react'
 import ModelResult from './results/ModelResult'
@@ -11,7 +13,7 @@ import ShortcutSettings from './Preferences'
 import { bindDesktop, defaults, errorText, modeNames, native, type Input, type Preferences, type Snapshot } from './desktop'
 import logo from '../assets/frogboard.svg'
 
-type View = 'work' | 'history' | 'editor' | 'models' | 'shortcuts'
+type View = 'work' | 'history' | 'editor' | 'models' | 'shortcuts' | 'general'
 type Reply = { action: string; text: string; busy: boolean; error?: string; errorCode?: string }
 
 export default function App() {
@@ -48,6 +50,7 @@ export default function App() {
       if (request.current !== controller) return
       setReply({ action: name, text, busy: false })
       try {
+        if (!recordHistory()) return
         await saveOperation({ input, result: text, actionId: action, actionName: name, instruction: extra, completedAt: Date.now() })
         setHistoryRevision(n => n + 1)
       } catch {
@@ -186,11 +189,13 @@ export default function App() {
     <header className="app-header"><div className="brand"><img src={logo} alt=""/><b>青蛙跳板</b><span>FrogBoard</span></div>
       <div className="menu-wrap"><button className="menu-trigger" aria-expanded={menu} onClick={() => setMenu(!menu)}><Settings2 size={16}/> 设置 <ChevronDown size={13}/></button>
         {menu && <><button className="menu-backdrop" aria-label="关闭设置菜单" onClick={() => setMenu(false)}/><div className="menu-list">
+          <button onClick={() => openView('general')}><Settings2 size={16}/> 通用设置</button>
           <button onClick={() => openView('models')}><Languages size={16}/> 模型与动作</button>
           <button onClick={() => openView('shortcuts')}><Keyboard size={16}/> 快捷键与划词</button>
         </div></>}</div>
     </header>
-    {view === 'shortcuts' ? <ShortcutSettings current={prefs} onSave={setPrefs} onBack={() => openView('work')}/> :
+    {view === 'general' ? <GeneralSettings onBack={() => openView('work')}/> :
+      view === 'shortcuts' ? <ShortcutSettings current={prefs} onSave={setPrefs} onBack={() => openView('work')}/> :
       view === 'models' ? <div className="model-host">
         <Settings onClose={() => openView('work')}/></div> :
       <section className="work">

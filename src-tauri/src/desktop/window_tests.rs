@@ -2,11 +2,11 @@ use super::*;
 use std::time::{Duration, Instant};
 use windows::Win32::{
     Foundation::{LPARAM, WPARAM},
-    UI::WindowsAndMessaging::{PostMessageW, SC_CLOSE, WM_SYSCOMMAND},
+    UI::WindowsAndMessaging::{PostMessageW, SC_CLOSE, WM_LBUTTONDBLCLK, WM_SYSCOMMAND},
 };
 
 // Runs a real HWND and the production title-bar close handler in isolation.
-// No single-instance plugin, global shortcuts, clipboard reads or model calls.
+// The tray path opens the clipboard workbench locally; no model is configured.
 #[test]
 #[ignore = "requires an interactive Windows desktop with WebView2"]
 fn translation_shares_workbench_size_and_hides_in_place() {
@@ -14,10 +14,12 @@ fn translation_shares_workbench_size_and_hides_in_place() {
     context.config_mut().identifier = "com.frogchou.frogboard.window-test".into();
     let config = &mut context.config_mut().app.windows[0];
     config.title = "FrogBoard window regression test".into();
+    config.visible = false;
     config.url = tauri::WebviewUrl::External("about:blank".parse().unwrap());
     let (send, result) = std::sync::mpsc::channel();
     let app = tauri::Builder::default()
         .any_thread()
+        .setup(|app| Ok(crate::shell::install_tray(app)?))
         .on_window_event(crate::shell::on_window_event)
         .build(context)
         .unwrap();
@@ -28,6 +30,27 @@ fn translation_shares_workbench_size_and_hides_in_place() {
             thread::spawn(move || {
                 let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let window = main_window(&app).unwrap();
+                    assert!(!window.is_visible().unwrap());
+                    let tray = app.tray_by_id("workbench").unwrap();
+                    tray.with_inner_tray_icon(|icon| unsafe {
+                        // Explorer's callback message for the pinned tray-icon version.
+                        PostMessageW(
+                            Some(HWND(icon.window_handle() as _)),
+                            6002,
+                            WPARAM(0),
+                            LPARAM(WM_LBUTTONDBLCLK as isize),
+                        )
+                        .unwrap();
+                    })
+                    .unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(8);
+                    while !window.is_visible().unwrap() {
+                        assert!(
+                            Instant::now() < deadline,
+                            "tray double-click did not open workbench"
+                        );
+                        thread::sleep(Duration::from_millis(25));
+                    }
                     for (custom_size, maximized) in [(false, false), (true, false), (false, true)] {
                         if custom_size {
                             window.set_size(tauri::LogicalSize::new(880, 620)).unwrap();

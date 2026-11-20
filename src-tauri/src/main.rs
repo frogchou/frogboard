@@ -3,6 +3,7 @@
 mod desktop;
 mod models;
 mod shell;
+mod startup;
 
 fn main() {
     shell::run()

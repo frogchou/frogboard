@@ -7,15 +7,15 @@
 .model-markdown :is(p, ul, ol, blockquote, pre, .markdown-table) { margin: .6em 0; }
 .model-markdown :is(ul, ol) { padding-left: 1.65em; }
 .model-markdown li > :is(ul, ol) { margin: .15em 0; }
-.model-markdown blockquote { border-left: 3px solid #a6baa2; padding-left: .85em; color: #526754; }
-.model-markdown hr { border: 0; border-top: 1px solid #d4dccd; margin: 1em 0; }
-.model-markdown code { padding: .08em .3em; border-radius: 4px; background: #edf1e8; font: .94em/1.5 Consolas, "Cascadia Mono", monospace; }
-.model-markdown pre { max-width: 100%; overflow-x: auto; padding: .8em 1em; background: #f1f4ed; border: 1px solid #dce3d5; border-radius: 8px; white-space: pre; tab-size: 4; }
+.model-markdown blockquote { border-left: 3px solid var(--line-strong); padding-left: .85em; color: var(--muted); }
+.model-markdown hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
+.model-markdown code { padding: .08em .3em; border-radius: 4px; background: var(--tint); font: .94em/1.5 Consolas, "Cascadia Mono", monospace; }
+.model-markdown pre { max-width: 100%; overflow-x: auto; padding: .8em 1em; background: var(--tint); border: 1px solid var(--line); border-radius: 8px; white-space: pre; tab-size: 4; }
 .model-markdown pre code { padding: 0; background: transparent; }
-.markdown-reference { color: #365c45; text-decoration: underline dotted; text-underline-offset: .16em; }
+.markdown-reference { color: var(--accent); text-decoration: underline dotted; text-underline-offset: .16em; }
 .markdown-table { overflow-x: auto; }
 .markdown-table table { border-collapse: collapse; }
-.markdown-table :is(th, td) { border: 1px solid #d4dccd; padding: .3em .65em; }
-.markdown-table th { background: #eef3e8; }
+.markdown-table :is(th, td) { border: 1px solid var(--line); padding: .3em .65em; }
+.markdown-table th { background: var(--tint); }
 .model-markdown > :first-child { margin-top: 0; }
 .model-markdown > :last-child { margin-bottom: 0; }

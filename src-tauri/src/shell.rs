@@ -1,7 +1,11 @@
-use crate::{desktop, models};
+use crate::{desktop, models, startup};
 use serde::{Deserialize, Serialize};
 use std::{fs, sync::Mutex};
-use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manager, State};
+use tauri::{
+    menu::MenuBuilder,
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, State,
+};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -140,10 +144,61 @@ pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent
     }
 }
 
+pub(crate) fn install_tray(app: &tauri::App) -> tauri::Result<()> {
+    let menu = MenuBuilder::new(app)
+        .text("clipboard", "剪贴板工作台")
+        .text("capture", "截图与标注")
+        .separator()
+        .text("quit", "退出青蛙跳板")
+        .build()?;
+    TrayIconBuilder::with_id("workbench")
+        .icon(app.default_window_icon().unwrap().clone())
+        .tooltip("青蛙跳板 · FrogBoard")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                }
+            ) {
+                activate(tray.app_handle(), "clipboard");
+            }
+        })
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "quit" => app.exit(0),
+            "clipboard" => activate(app, "clipboard"),
+            "capture" => activate(app, "capture"),
+            _ => {}
+        })
+        .build(app)?;
+    Ok(())
+}
+
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    if std::env::args_os()
+        .skip(1)
+        .any(|arg| arg == startup::LOGIN_ARG)
+    {
+        if let Some(main) = context
+            .config_mut()
+            .app
+            .windows
+            .iter_mut()
+            .find(|w| w.label == "main")
+        {
+            main.visible = false;
+            main.focus = false;
+        }
+    }
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            let _ = desktop::reopen(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if !args.iter().any(|arg| arg == startup::LOGIN_ARG) {
+                let _ = desktop::reopen(app);
+            }
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(Shell::default())
@@ -166,23 +221,7 @@ pub fn run() {
             *state.warning.lock().unwrap() = warnings.join(" ");
             desktop::init(app.handle());
 
-            let menu = MenuBuilder::new(app)
-                .text("clipboard", "剪贴板工作台")
-                .text("capture", "截图与标注")
-                .separator()
-                .text("quit", "退出青蛙跳板")
-                .build()?;
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("青蛙跳板 · FrogBoard")
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id().as_ref() {
-                    "quit" => app.exit(0),
-                    "clipboard" => activate(app, "clipboard"),
-                    "capture" => activate(app, "capture"),
-                    _ => {}
-                })
-                .build(app)?;
+            install_tray(app)?;
             Ok(())
         })
         .on_window_event(on_window_event)
@@ -190,6 +229,8 @@ pub fn run() {
             open_input,
             get_preferences,
             save_preferences,
+            startup::get_login_startup,
+            startup::set_login_startup,
             desktop::pending_input,
             desktop::clear_pending,
             desktop::finish_editor,
@@ -202,7 +243,7 @@ pub fn run() {
             models::model_action_run,
             models::model_action_cancel
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("FrogBoard failed to start");
 }
 

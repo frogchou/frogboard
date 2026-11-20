@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light;
+  --ink: #24382f;
+  --muted: #5c6e61;
+  --accent: #2b6d50;
+  --primary: #214d39;
+  --primary-hover: #31694e;
+  --page: #f6f6ef;
+  --panel: #fbfcf8;
+  --surface: #fdfefa;
+  --field: #ffffff;
+  --line: #d4dccd;
+  --line-strong: #bac9b9;
+  --tint: #edf2e9;
+  --hover: #e9eedf;
+  --highlight: #d9eabf;
+  --dot: #bdcbaa;
+  --focus: #528759;
+  --placeholder: #6b7c70;
+  --warning: #fff6da;
+  --warning-line: #d5c7a2;
+  --error: #8e4036;
+  --error-bg: #fff5f1;
+  --error-line: #edcfc8;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e7efe9;
+  --muted: #afc0b5;
+  --accent: #94d7ad;
+  --primary: #305f47;
+  --primary-hover: #397353;
+  --page: #19221e;
+  --panel: #202b25;
+  --surface: #27332b;
+  --field: #1e2922;
+  --line: #405046;
+  --line-strong: #5c7364;
+  --tint: #2e3d32;
+  --hover: #36483b;
+  --highlight: #3c563a;
+  --dot: #415447;
+  --focus: #98d0a3;
+  --placeholder: #a3b4a8;
+  --warning: #413922;
+  --warning-line: #736137;
+  --error: #ffb6a9;
+  --error-bg: #422c28;
+  --error-line: #775049;
+}
+
+.general-settings .pref-row { gap: 18px; min-height: 65px; }
+.general-settings .pref-row small { display: block; margin-top: 4px; color: var(--muted); }
+.general-settings select { min-width: 125px; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--ink); background: var(--field); }
+.general-settings input[role=switch] { width: 1.25em; height: 1.25em; flex-shrink: 0; accent-color: var(--primary); }
+.general-settings [role=alert] { color: var(--error); }
+
+/* Theme the tools around the screenshot; the canvas retains the captured colors. */
+:root[data-theme=light] .fb-editor { color-scheme: light; --fbe-ink: #253a2d; --fbe-muted: #526759; --fbe-green: #30684a; }
+:root[data-theme=light] :is(.fbe-identity, .fb-editor .fbe-exit, .fbe-toolbox, .fbe-hint, .fbe-error, .fbe-loading) { background: #fbfdf8f7; border-color: #abbdaf; }
+:root[data-theme=light] :is(.fbe-dim, .fbe-hint, .fb-editor .fbe-icon) { color: #435d4c; }
+:root[data-theme=light] :is(.fbe-dim, .fbe-group + .fbe-group, .fbe-styles, .fbe-hint button) { border-color: #c1cec4; }
+:root[data-theme=light] .fbe-size select { background: #f9fcf8; border-color: #bccdc1; }
+:root[data-theme=light] .fb-editor :is(.fbe-icon, .fbe-action, .fbe-exit):hover:enabled,
+:root[data-theme=light] .fb-editor .fbe-icon[aria-pressed=true] { background: #d8eadb; color: #254c33; }
+:root[data-theme=light] .fb-editor .fbe-copy { color: white; }
+:root[data-theme=light] .fb-editor .fbe-error { color: #8e4036; }

@@ -2,5 +2,5 @@
   "identifier": "desktop",
   "description": "Local FrogBoard interface",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:app:allow-set-app-theme"]
 }
