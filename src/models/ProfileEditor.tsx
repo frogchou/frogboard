@@ -30,6 +30,7 @@ export default function ProfileEditor({ profile, saved, keyEdit, onChange, onKey
       <label>显示名称<input value={profile.name} onChange={e => onChange({ name: e.target.value })} placeholder="例如：工作用模型" maxLength={96} /></label>
     </div>
     <label>接口地址<input className="fbm-mono" value={profile.endpoint} onChange={e => changeEndpoint(e.target.value)} placeholder="https://api.example.com/v1" spellCheck={false} autoComplete="off" /></label>
+    {/^http:\/\//i.test(profile.endpoint.trim()) && <small className="fbm-muted">HTTP 会明文传输请求内容和随请求发送的 API 密钥。</small>}
     <label>模型 ID<input className="fbm-mono" value={profile.model} onChange={e => onChange({ model: e.target.value })} placeholder="填写服务商提供的模型 ID" spellCheck={false} autoComplete="off" /></label>
     <label><span className="fbm-label-line">API 密钥 <small>{retainsKey ? '已存入 Windows 凭据管理器' : '本机免密服务可留空'}</small></span>
       <span className="fbm-secret"><KeyRound size={15} /><input type={visible ? 'text' : 'password'} value={keyEdit || ''} onChange={e => onKey(e.target.value || undefined)} placeholder={retainsKey ? '已保存，输入新密钥可替换' : '输入 API 密钥'} autoComplete="new-password" spellCheck={false} />

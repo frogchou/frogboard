@@ -17,7 +17,7 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
-use url::{Host, Url};
+use url::Url;
 
 #[derive(Debug, Serialize)]
 pub struct ModelError {
@@ -202,17 +202,12 @@ fn endpoint_url(raw: &str) -> ModelResult<Url> {
     let invalid = || {
         error(
             "endpoint",
-            "请输入 HTTPS 接口地址，或本机的 HTTP 地址。地址中不能包含凭据、查询参数或片段。",
+            "请输入完整的 HTTP 或 HTTPS 接口地址，地址中不能包含账号、密码、查询参数或片段。",
         )
     };
     let mut url = Url::parse(raw.trim()).map_err(|_| invalid())?;
-    let loopback = match url.host() {
-        Some(Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
-        Some(Host::Ipv4(ip)) => ip.is_loopback(),
-        Some(Host::Ipv6(ip)) => ip.is_loopback(),
-        None => return Err(invalid()),
-    };
-    if !(url.scheme() == "https" || (url.scheme() == "http" && loopback))
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.has_host()
         || !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
@@ -667,9 +662,11 @@ mod tests {
     }
 
     #[test]
-    fn allows_secure_services_and_loopback() {
+    fn accepts_http_and_https_model_endpoints() {
         for good in [
             "https://example.com/v1",
+            "http://192.0.2.42:33333/v1",
+            "http://example.com:8080/v1/chat/completions",
             "http://localhost:11434/v1",
             "http://127.0.0.1:1234/v1",
             "http://[::1]/v1/chat/completions/",
@@ -680,8 +677,8 @@ mod tests {
                 .ends_with("/v1/chat/completions"));
         }
         for bad in [
-            "http://example.com/v1",
-            "http://localhost.example/v1",
+            "http://user:secret@example.com/v1",
+            "http://example.com/v1#fragment",
             "https://key@example.com",
             "https://example.com/?key=a",
             "file:///a",

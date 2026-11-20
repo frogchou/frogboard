@@ -19,9 +19,8 @@ function validationError(settings: ModelSettings): string {
     if (!p.name.trim() || !p.model.trim()) return '请为每个模型填写显示名称和模型 ID。';
     try {
       const url = new URL(p.endpoint);
-      const local = ['localhost', '[::1]'].includes(url.hostname) || /^127\.\d+\.\d+\.\d+$/.test(url.hostname);
-      if ((url.protocol !== 'https:' && !(local && url.protocol === 'http:')) || url.username || url.password || url.search || url.hash) throw new Error();
-    } catch { return '请输入有效的 HTTPS 接口地址，或本机的 HTTP 地址。'; }
+      if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.href.includes('?') || url.href.includes('#')) throw new Error();
+    } catch { return '请输入完整的 HTTP 或 HTTPS 接口地址，地址中不能包含账号、密码、查询参数或片段。'; }
   }
   if (settings.actions.some(a => !a.name.trim() || !a.prompt.trim())) return '请为每个操作填写名称和提示词。';
   return '';
