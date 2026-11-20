@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { ArrowDownLeft, Check, ChevronDown, Clipboard, Copy, FileImage, FileText, Keyboard, Languages, PenLine, RefreshCw, Save, Scan, Settings2, X } from 'lucide-react'
 import Editor from './editor/Editor'
+import ModelResult from './results/ModelResult'
 import Settings, { listActions, ModelError, runAction, type Action } from './models'
 import ShortcutSettings from './Preferences'
 import { bindDesktop, defaults, errorText, modeNames, native, type Input, type Preferences, type Snapshot } from './desktop'
@@ -149,7 +150,7 @@ export default function App() {
       <p>{reply.error}</p><div className="line-actions">{['unconfigured', 'profile', 'auth', 'credential', 'endpoint'].includes(reply.errorCode ?? '') &&
         <button onClick={() => openView('models')}>模型设置</button>}
       <button onClick={() => execute(lastAction.current, valid, reply.action)}>重试</button></div>
-    </> : <pre>{reply.text}</pre>}
+    </> : <ModelResult text={reply.text}/>}
   </section>
   return <main className="frog-shell">
     <header className="app-header"><div className="brand"><img src={logo} alt=""/><b>青蛙跳板</b><span>FrogBoard</span></div>

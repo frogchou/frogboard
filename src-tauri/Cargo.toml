@@ -1,6 +1,6 @@
 [package]
 name = "frogboard"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "青蛙跳板 Windows desktop workspace"
 publish = false

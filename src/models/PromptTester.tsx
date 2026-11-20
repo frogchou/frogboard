@@ -1,6 +1,7 @@
 import { FlaskConical, Play, Square, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { runAction, type Action, type ActionInput } from './api';
+import ModelResult from '../results/ModelResult';
 
 export default function PromptTester({ action, modelName, dirty, save }: {
   action: Action; modelName?: string; dirty: boolean; save: () => Promise<boolean>;
@@ -54,7 +55,7 @@ export default function PromptTester({ action, modelName, dirty, save }: {
           <button type="button" className="fbm-button" disabled={!modelName || (action.input === 'text' ? !sample.trim() : !file)} onClick={() => void test()}><Play size={13} />{dirty ? '保存并测试' : '运行测试'}</button>}
       </div>
       {message && <p className="fbm-error" role="status">{message}</p>}
-      {result && <output className="fbm-result">{result}</output>}
+      {result && <div className="fbm-result" role="status"><ModelResult text={result}/></div>}
     </div>
   </details>;
 }

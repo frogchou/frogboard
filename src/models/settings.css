@@ -87,7 +87,7 @@
 .fbm-settings .fbm-upload { display: flex; align-items: center; gap: 7px; position: relative; border: 1px dashed var(--fbm-line); border-radius: 6px; padding: 8px; overflow: hidden; }
 .fbm-upload input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
 .fbm-upload:focus-within { outline: 2px solid var(--fbm-accent); }
-.fbm-result { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; padding: 10px; color: var(--fbm-ink); background: #f4f7f2; border-radius: 7px; }
+.fbm-result { min-width: 0; max-height: 200px; overflow: auto; padding: 10px; color: var(--fbm-ink); background: #f4f7f2; border-radius: 7px; }
 @media(max-width: 520px) {
   .fbm-settings { padding: 12px; }
   .fbm-header { align-items: flex-start; }
