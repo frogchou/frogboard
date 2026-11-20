@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNotify } from '../feedback/Feedback'
 import { errorText, type Input } from '../desktop'
 import { runConversation } from '../models/api'
 import { appendTurn, createThread, deleteThread, getThread, listThreads, modelMessages, type Thread, type ThreadRow, type Turn } from './store'
@@ -9,7 +10,8 @@ export function useConversations(visible: boolean) {
   const [loaded, setLoaded] = useState<Thread>()
   const [revision, setRevision] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [storageError, setStorageError] = useState('')
+  const notify = useNotify()
+  const [storageError, setStorageError] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const requests = useRef(new Map<string, AbortController>())
@@ -29,11 +31,11 @@ export function useConversations(visible: boolean) {
       setRows(list)
       select(id)
       setLoaded(current)
-      setStorageError('')
-    })().catch(e => { if (active) setStorageError(errorText(e)) })
+      setStorageError(false)
+    })().catch(e => { if (active) { setStorageError(true); notify(errorText(e)) } })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [selected, revision, visible])
+  }, [selected, revision, visible, notify])
 
   useEffect(() => {
     const jobs = requests.current

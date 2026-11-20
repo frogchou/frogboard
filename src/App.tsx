@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { ArrowDownLeft, ArrowLeft, Check, ChevronDown, Clipboard, Copy, FileImage, FileText, Keyboard, Languages, PenLine, RefreshCw, Save, Scan, Settings2, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowLeft, Check, ChevronDown, Clipboard, Copy, FileImage, FileText, Keyboard, Languages, PenLine, RefreshCw, Save, Scan, Settings2 } from 'lucide-react'
 import Editor from './editor/Editor'
 import HistoryList from './history/HistoryList'
 import GeneralSettings from './general/GeneralSettings'
@@ -14,6 +14,7 @@ import Settings, { listActions, ModelError, runAction, type Action } from './mod
 import ShortcutSettings from './Preferences'
 import { bindDesktop, defaults, errorText, modeNames, native, type Input, type Preferences, type Snapshot } from './desktop'
 import logo from '../assets/frogboard.svg'
+import { useNotify } from './feedback/Feedback'
 
 const tabs = [
   { id: 'work', name: '工作台', icon: Clipboard },
@@ -31,7 +32,7 @@ export default function App() {
   const [showTranslation, setShowTranslation] = useState(false)
   const [actions, setActions] = useState<Action[]>([])
   const [reply, setReply] = useState<Reply | null>(null)
-  const [notice, setNotice] = useState('')
+  const notify = useNotify()
   const [prefs, setPrefs] = useState<Preferences>(defaults)
   const [menu, setMenu] = useState(false)
   const [instruction, setInstruction] = useState('')
@@ -52,7 +53,7 @@ export default function App() {
     const controller = new AbortController()
     request.current = controller
     lastAction.current = action
-    setNotice('')
+    notify('')
     setReply({ action: name, text: '', busy: true })
     try {
       const text = await runAction(action, input, { signal: controller.signal, instruction: extra })
@@ -63,18 +64,20 @@ export default function App() {
         await saveOperation({ input, result: text, actionId: action, actionName: name, instruction: extra, completedAt: Date.now() })
         setHistoryRevision(n => n + 1)
       } catch {
-        setNotice('本次结果已生成，但历史记录保存失败，请检查本机存储空间。')
+        notify('本次结果已生成，但历史记录保存失败，请检查本机存储空间。')
       }
     } catch (e) {
-      if (request.current === controller && !controller.signal.aborted)
+      if (request.current === controller && !controller.signal.aborted) {
+        notify(errorText(e))
         setReply({ action: name, text: '', busy: false, error: errorText(e), errorCode: e instanceof ModelError ? e.code : undefined })
+      }
     }
   }
   function accept(next: Snapshot) {
     activeId.current = next.id
     invalidate()
     setMenu(false)
-    setNotice('')
+    notify('')
     setItem(next)
     setInstruction('')
     setShowInstruction(false)
@@ -97,11 +100,11 @@ export default function App() {
   useEffect(() => {
     let disposed = false
     let stop: (() => void) | undefined
-    void bindDesktop(accept, setNotice, () => { activeId.current = null; invalidate(); setItem(null); setMenu(false); setView('work') })
-      .then(cleanup => { if (disposed) cleanup(); else stop = cleanup }).catch(e => setNotice(errorText(e)))
+    void bindDesktop(accept, notify, () => { activeId.current = null; invalidate(); setItem(null); setMenu(false); setView('work') })
+      .then(cleanup => { if (disposed) cleanup(); else stop = cleanup }).catch(e => notify(errorText(e)))
     if (native) void invoke<[Preferences, string]>('get_preferences').then(([p, w]) => {
-      setPrefs(p); if (w) setNotice(w)
-    }).catch(e => setNotice(errorText(e)))
+      setPrefs(p); if (w) notify(w)
+    }).catch(e => notify(errorText(e)))
     return () => { disposed = true; stop?.(); request.current?.abort() }
   }, [])
   useEffect(() => {
@@ -109,7 +112,7 @@ export default function App() {
     setActions([])
     if (native && item && item.kind !== 'empty' && view === 'work') {
       void listActions(item.kind).then(rows => { if (live) setActions(rows) }).catch(e => {
-        if (live) setNotice(errorText(e))
+        if (live) notify(errorText(e))
       })
     }
     return () => { live = false }
@@ -117,8 +120,8 @@ export default function App() {
 
   async function trigger(mode: keyof typeof modeNames) {
     setMenu(false)
-    if (!native) { setNotice('请在 Windows 桌面版中使用系统剪贴板、截图和翻译。'); return }
-    try { await invoke('open_input', { mode }) } catch (e) { setNotice(errorText(e)) }
+    if (!native) { notify('请在 Windows 桌面版中使用系统剪贴板、截图和翻译。'); return }
+    try { await invoke('open_input', { mode }) } catch (e) { notify(errorText(e)) }
   }
   async function closeEditor() {
     if (!item || activeId.current !== item.id) return
@@ -142,7 +145,7 @@ export default function App() {
       } else {
         await closeEditor()
       }
-      setNotice('已复制标注后的图片')
+      notify('已复制标注后的图片', 'success')
       return
     }
     if (item.mode !== 'clipboard') {
@@ -167,7 +170,7 @@ export default function App() {
       if (e.key !== 'Escape' || !tabs.some(tab => tab.id === view) || e.isComposing) return
       if (menu) { setMenu(false); return }
       if (native) {
-        if (!e.repeat) void invoke('hide_panel').catch(err => setNotice(errorText(err)))
+        if (!e.repeat) void invoke('hide_panel').catch(err => notify(errorText(err)))
         return
       }
       invalidate()
@@ -181,10 +184,10 @@ export default function App() {
   if (view === 'editor' && item?.kind === 'image')
     return <Editor key={item.id} image={item.value} cropFirst={item.mode !== 'clipboard'}
       windowBounds={item.windowBounds} quickTranslate={item.mode === 'translate'} onExport={exportImage}
-      onClose={() => void closeEditor().catch(e => setNotice(errorText(e)))}/>
+      onClose={() => void closeEditor().catch(e => notify(errorText(e)))}/>
 
   const valid = item && item.kind !== 'empty' ? { kind: item.kind, value: item.value } as Input : null
-  const report = (job: Promise<unknown>, ok = '') => void job.then(() => setNotice(ok)).catch(e => setNotice(errorText(e)))
+  const report = (job: Promise<unknown>, ok = '') => void job.then(() => { if (ok) notify(ok, 'success') }).catch(e => notify(errorText(e)))
   const reading = view === 'work' && valid?.kind === 'text' && showTranslation
   const resultCard = valid && reply && <section className="result" aria-live="polite">
     <div className="result-head"><b><Languages size={16}/> {reply.action}</b>
@@ -192,7 +195,7 @@ export default function App() {
         <button onClick={() => report(invoke('copy_text', { text: reply.text }), '已复制结果')}><Copy size={14}/> 复制</button>}
     </div>
     {reply.busy ? <p className="waiting">正在等待模型响应…</p> : reply.error ? <>
-      <p>{reply.error}</p><div className="line-actions">{['unconfigured', 'profile', 'auth', 'credential', 'endpoint'].includes(reply.errorCode ?? '') &&
+      <div className="line-actions">{['unconfigured', 'profile', 'auth', 'credential', 'endpoint'].includes(reply.errorCode ?? '') &&
         <button onClick={() => openView('models')}>模型设置</button>}
       <button onClick={() => execute(lastAction.current, valid, reply.action, currentInstruction)}>重试</button></div>
     </> : <ModelResult text={reply.text}/>}
@@ -231,7 +234,6 @@ export default function App() {
           {!reading && <p>{valid ? valid.kind === 'image' ? '图片快照' : '文字快照' : '读取当前内容，选择下一步操作。'}</p>}</div>
           {reading ? <button onClick={() => setShowTranslation(false)}><ArrowLeft size={16}/>返回工作台</button> :
             <button className="circle" title="重新读取剪贴板" aria-label="重新读取剪贴板" onClick={() => trigger('clipboard')}><RefreshCw size={17}/></button>}</div>
-        {notice && <div className="notice" role="status">{notice}<button aria-label="关闭提示" onClick={() => setNotice('')}><X size={14}/></button></div>}
         {!valid ? <>
           <div className="empty-board"><div className="empty-icon"><Clipboard size={33} strokeWidth={1.6}/></div>
             <h2>{item ? '剪贴板里还没有可处理的内容' : '从剪贴板开始'}</h2>
@@ -253,7 +255,7 @@ export default function App() {
               const id = activeId.current
               void chat.create(valid, currentInstruction).then(() => {
                 if (activeId.current === id) { setShowTranslation(false); setView('chats') }
-              }).catch(e => setNotice(errorText(e)))
+              }).catch(e => notify(errorText(e)))
             }}><MessagesSquare size={15}/>加入会话</button>
             {showInstruction && <textarea autoFocus aria-label="附加指令" rows={2} value={instruction}
               placeholder="例如：保留英文术语，用三句话概括。" onChange={e => setInstruction(e.target.value)}/>}

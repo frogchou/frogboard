@@ -1,3 +1,4 @@
+import { useNotify } from '../feedback/Feedback'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { ArrowLeft } from 'lucide-react'
@@ -9,19 +10,18 @@ export default function GeneralSettings({ onBack }: { onBack: () => void }) {
   const [history, setHistory] = useState(recordHistory)
   const [startup, setStartup] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const notify = useNotify()
   useEffect(() => {
     if (!native) return
     let active = true
     invoke<boolean>('get_login_startup').then(value => { if (active) setStartup(value) })
-      .catch(e => { if (active) setError(errorText(e)) })
+      .catch(e => { if (active) notify(errorText(e)) })
     return () => { active = false }
   }, [])
 
   async function update(change: () => void | Promise<void>) {
     setBusy(true)
-    setError('')
-    try { await change() } catch (e) { setError(errorText(e)) }
+    try { await change() } catch (e) { notify(errorText(e)) }
     finally { setBusy(false) }
   }
 
@@ -44,6 +44,5 @@ export default function GeneralSettings({ onBack }: { onBack: () => void }) {
       <input type="checkbox" role="switch" aria-label="记录操作历史" checked={history} disabled={busy}
         onChange={e => { const enabled = e.target.checked; void update(() => { setRecordHistory(enabled); setHistory(enabled) }) }}/>
     </label>
-    {error && <p role="alert">{error}</p>}
   </section>
 }

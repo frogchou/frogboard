@@ -1,3 +1,4 @@
+import { useNotify } from '../feedback/Feedback'
 import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, FileImage, History } from 'lucide-react'
 import { listOperations, loadOperation, loadThumbnail, type HistoryRow, type Operation } from './store'
@@ -9,11 +10,13 @@ export default function HistoryList({ revision, onRestore }: {
   onRestore: (operation: Operation, id: number) => void
 }) {
   const [rows, setRows] = useState<HistoryRow[] | null>(null)
-  const [error, setError] = useState('')
+  const notify = useNotify()
+  const [failed, setFailed] = useState(false)
   const selection = useRef(0)
   useEffect(() => () => { selection.current++ }, [])
   useEffect(() => {
     let live = true
+    setFailed(false)
     listOperations().then(async items => {
       if (!live) return
       setRows(items)
@@ -27,7 +30,7 @@ export default function HistoryList({ revision, onRestore }: {
         } catch { /* Keep the image placeholder and the restore action available. */ }
       }
     })
-      .catch(() => { if (live) setError('无法读取本地历史记录，请重新打开历史记录。') })
+      .catch(() => { if (live) { setFailed(true); notify('无法读取本地历史记录，请重新打开历史记录。') } })
     return () => { live = false }
   }, [revision])
 
@@ -37,14 +40,13 @@ export default function HistoryList({ revision, onRestore }: {
       const operation = await loadOperation(id)
       if (token === selection.current) onRestore(operation, id)
     } catch {
-      if (token === selection.current) setError('无法恢复这条记录，请重新打开历史记录。')
+      if (token === selection.current) notify('无法恢复这条记录，请重新打开历史记录。')
     }
   }
 
   return <div className="history-view">
     <div className="title-line"><div><h1>历史记录</h1><p>最近 30 次已完成的模型操作</p></div></div>
-    {error && <p role="alert">{error}</p>}
-    {rows === null ? !error && <p role="status">正在读取…</p> : rows.length === 0 ?
+    {rows === null ? !failed && <p role="status">正在读取…</p> : rows.length === 0 ?
       <div className="history-empty"><History size={28}/><p>还没有操作记录</p></div> :
       <ul className="history-list">{rows.map(row => <li key={row.id}>
         <button onClick={() => void restore(row.id)}>

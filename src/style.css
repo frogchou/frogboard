@@ -32,7 +32,7 @@ button:disabled { cursor: wait; opacity: .6; }
 .menu-list { position: absolute; z-index: 10; right: 0; top: 42px; min-width: 175px; padding: 5px; background: var(--field); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px #1433221a; }
 .menu-list button { width: 100%; border: 0; justify-content: flex-start; }
 .work, .pref-screen, .model-host { flex: 1; min-height: 0; overflow: auto; padding: 24px clamp(18px, 4vw, 38px); }
-.work { width: min(100%, 950px); margin: auto; }
+.work { width: min(100%, 950px); margin: auto; scrollbar-gutter: stable both-edges; }
 .work-tabs { display: flex; gap: 12px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
 .work-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 5px 2px 8px; color: var(--muted); }
 .work-tabs button[aria-selected=true] { border-bottom-color: var(--accent); color: var(--accent); font-weight: 650; }
@@ -67,8 +67,6 @@ button:disabled { cursor: wait; opacity: .6; }
 .status-line { border-top: 1px solid var(--line); padding: 6px clamp(18px, 4vw, 38px); color: var(--muted); font-size: 12px; background: var(--panel); }
 .status-line button, .pref-screen .plain, .model-host > .plain { border: 0; background: transparent; }
 .status-line button { padding: 2px; font-size: 12px; }
-.notice { margin: 12px 0; border: 1px solid var(--warning-line); background: var(--warning); display: flex; align-items: center; justify-content: space-between; border-radius: 8px; padding: 6px 10px; overflow-wrap: anywhere; }
-.notice button { padding: 2px; border: 0; background: transparent; }
 .preview, .result { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: var(--surface); margin-top: 16px; }
 .preview { max-height: 32vh; overflow: auto; }
 .preview.original { padding: 8px 12px; margin-top: 8px; }

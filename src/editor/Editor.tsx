@@ -1,3 +1,4 @@
+import { useNotify } from '../feedback/Feedback'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { Icon } from './Icons'
@@ -57,7 +58,8 @@ function EditorSurface({ image, cropFirst, quickTranslate, initialCrop, windowBo
   const [dragging, setDragging] = useState(false)
   const scratch = useRef<HTMLCanvasElement | null>(null)
   const mosaicPreview = useRef<{ sheet: Sheet; hideId?: number; canvas: HTMLCanvasElement } | null>(null)
-  const [error, setError] = useState(''), [busy, setBusy] = useState(false)
+  const notify = useNotify()
+  const [loadFailed, setLoadFailed] = useState(false), [busy, setBusy] = useState(false)
   const exporting = useRef(false)
   const [hoverWindow, setHoverWindow] = useState<Box | null>(null)
   const [cursor, setCursor] = useState('')
@@ -78,7 +80,7 @@ function EditorSurface({ image, cropFirst, quickTranslate, initialCrop, windowBo
       current.current = { crop: crop ? snapCrop(crop) : null, marks: [] }
       setSheet(current.current); setSource(img)
     }
-    img.onerror = () => { if (active) setError('图片加载失败，请关闭后重新打开。') }
+    img.onerror = () => { if (active) { setLoadFailed(true); notify('图片加载失败，请关闭后重新打开。') } }
     img.src = image
     return () => { active = false }
   }, [image])
@@ -158,7 +160,7 @@ function EditorSurface({ image, cropFirst, quickTranslate, initialCrop, windowBo
   }
   function commit(value: Sheet) {
     past.current = [...past.current.slice(-79), current.current]
-    future.current = []; showSheet(value); setError('')
+    future.current = []; showSheet(value)
   }
   function history(back: boolean) {
     const from = back ? past.current : future.current, to = back ? future.current : past.current
@@ -193,9 +195,9 @@ function EditorSurface({ image, cropFirst, quickTranslate, initialCrop, windowBo
     finishText()
     const doc = current.current
     if (!doc.crop) return
-    exporting.current = true; setBusy(true); setError('')
+    exporting.current = true; setBusy(true)
     try { await onExport(kind, flatten(source, doc)) }
-    catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    catch (err) { notify(err instanceof Error ? err.message : String(err)) }
     finally { exporting.current = false; setBusy(false) }
   }
   function cancelDrag() {
@@ -376,7 +378,6 @@ function EditorSurface({ image, cropFirst, quickTranslate, initialCrop, windowBo
       {sizeBox && <span className="fbe-dim">{sizeBox.w} × {sizeBox.h}</span>}</div>
       <button type="button" title="退出（Esc）" aria-label="退出编辑" className="fbe-exit" onClick={onClose} disabled={busy}><Icon name="close"/></button></div>
     {!draft && <div ref={controls} className={'fbe-controls' + (anchor ? ' fbe-floating' : '')} style={{ ...dockPosition, visibility: dragging ? 'hidden' : 'visible' }}>
-      {error && <div className="fbe-error" role="alert">{error}</div>}
       {source && <div className="fbe-hint">{busy ? '正在导出…' : !scene.crop ? (windowBounds?.length ? '点击窗口，或拖动选择区域' : '按住并拖动，选择截图区域') : guides[tool]}
         {!sheet.crop && !preview && <button type="button" onClick={wholeImage} disabled={busy}>选择全图</button>}</div>}
       {scene.crop && <div className="fbe-toolbox">
@@ -408,6 +409,6 @@ function EditorSurface({ image, cropFirst, quickTranslate, initialCrop, windowBo
         onChange={e => updateDraft({...draft,text:e.target.value})} onBlur={() => finishText()}/>
       <small>Enter 换行 · Ctrl+Enter 完成</small>
     </div>}
-    {!source && !error && <div className="fbe-loading">正在打开图片…</div>}
+    {!source && !loadFailed && <div className="fbe-loading">正在打开图片…</div>}
   </div>
 }

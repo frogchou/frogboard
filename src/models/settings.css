@@ -21,7 +21,7 @@
 .fbm-settings button { cursor: pointer; -webkit-app-region: no-drag; }
 .fbm-settings button:disabled { opacity: .55; cursor: default; }
 .fbm-settings button:focus-visible, .fbm-settings summary:focus-visible { outline: 2px solid var(--fbm-accent); outline-offset: 2px; }
-.fbm-header, .fbm-heading, .fbm-section-head, .fbm-row, .fbm-editor-bottom, .fbm-test-controls, .fbm-label-line, .fbm-feedback {
+.fbm-header, .fbm-heading, .fbm-section-head, .fbm-row, .fbm-editor-bottom, .fbm-test-controls, .fbm-label-line {
   display: flex; align-items: center; gap: 9px;
 }
 .fbm-header, .fbm-section-head, .fbm-test-controls, .fbm-label-line { justify-content: space-between; }
@@ -77,10 +77,6 @@
 .fbm-defaults { padding: 12px; }
 .fbm-default span { margin-bottom: 3px; color: var(--fbm-ink); }
 .fbm-muted { margin-top: 10px; }
-.fbm-error { color: var(--error); font-size: 12px; }
-.fbm-feedback { margin-top: 10px; border: 1px solid var(--error-line); border-radius: 6px; padding: 7px 9px; background: var(--error-bg); }
-.fbm-feedback svg { flex-shrink: 0; }
-.fbm-feedback button { margin-left: auto; border: 0; color: inherit; background: transparent; text-decoration: underline; }
 .fbm-tester { border-top: 1px solid var(--fbm-line); padding-top: 9px; }
 .fbm-tester summary { cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 550; color: var(--fbm-accent); }
 .fbm-test-body { display: grid; gap: 9px; padding-top: 10px; }

@@ -1,0 +1,11 @@
+.feedback-bubble {
+  position: fixed; z-index: 10001; inset-block-start: 14px; inset-inline-start: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; width: max-content; max-width: min(28rem, calc(100% - 32px));
+  padding: 7px 8px 7px 12px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface);
+  color: var(--ink); font-size: 13px; line-height: 1.5; box-shadow: 0 4px 18px #14291f26;
+}
+.feedback-bubble > svg { flex: none; color: var(--accent); }
+.feedback-bubble[data-tone=error] > svg { color: var(--error); }
+.feedback-bubble span { overflow-wrap: anywhere; max-height: 34vh; overflow: auto; }
+.feedback-bubble button { flex: none; display: grid; place-items: center; padding: 4px; color: var(--muted); background: transparent; border: 0; border-radius: 6px; }
+.feedback-bubble button:hover { background: var(--hover); }

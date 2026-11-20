@@ -1,6 +1,6 @@
 .instruction .join-chat { margin-inline-start: 6px; }
-.work.chat-work { display: flex; flex-direction: column; overflow: hidden; width: min(100%, 1240px); }
-.chat-work .work-tabs { flex: none; margin-bottom: 12px; }
+.work.chat-work { display: flex; flex-direction: column; overflow: hidden; }
+.chat-work .work-tabs { flex: none; }
 .chat-work #work-panel { flex: 1; min-height: 0; }
 .chat-layout { height: 100%; display: grid; grid-template-columns: clamp(140px, 22vw, 230px) minmax(0, 1fr); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); }
 .chat-layout.collapsed { grid-template-columns: minmax(0, 1fr); }
@@ -12,7 +12,7 @@
 .chat-index button svg, .chat-head button { flex: none; }
 .chat-index button span, .chat-head h1 { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 .chat-index button[aria-current=true] { background: var(--surface); color: var(--accent); font-weight: 600; }
-.chat-head { padding: 8px 10px; display: flex; gap: 7px; align-items: center; border-bottom: 1px solid var(--line); }
+.chat-head { position: relative; padding: 8px 10px; display: flex; gap: 7px; align-items: center; border-bottom: 1px solid var(--line); }
 .chat-head h1 { font-size: 15px; margin: 0; flex: 1; }
 .chat-head button { border: 0; padding: 5px; background: transparent; color: var(--muted); }
 .chat-empty { margin: auto; text-align: center; padding: 16px; color: var(--muted); }
@@ -37,10 +37,8 @@
 .chat-composer small { color: var(--muted); }
 .chat-composer button { padding: 5px 8px; }
 .chat-composer button:disabled { cursor: default; }
-.chat-confirm { padding: 8px; flex-wrap: wrap; background: var(--warning); }
-.chat-error { color: var(--error); overflow-wrap: anywhere; }
+.chat-confirm { position: absolute; top: 100%; right: 8px; z-index: 1; max-width: calc(100% - 16px); padding: 10px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: 0 4px 16px #14291f26; }
 @media (max-width: 650px) {
-  .work.chat-work { padding-inline: 10px; padding-bottom: 10px; }
   .chat-layout { grid-template-columns: 128px minmax(0, 1fr); }
   .chat-sidebar { padding: 6px; }
   .chat-index button { padding-inline: 5px; }

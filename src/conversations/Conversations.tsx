@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUp, FileText, Image as ImageIcon, MessageCircle, PanelLeft, Plus, Square, Trash2 } from 'lucide-react'
+import { useNotify } from '../feedback/Feedback'
 import { errorText } from '../desktop'
 import ModelResult from '../results/ModelResult'
 import type { useConversations } from './useConversations'
@@ -10,7 +11,8 @@ export default function Conversations({ chat, onSettings }: Props) {
   const { thread, selected } = chat
   const [collapsed, setCollapsed] = useState(false)
   const [confirm, setConfirm] = useState<string | null>(null)
-  const [notice, setNotice] = useState('')
+  const notify = useNotify()
+  useEffect(() => { if (chat.error) notify(chat.error) }, [selected, chat.error, notify])
   const scroller = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const stick = useRef(true)
@@ -18,7 +20,6 @@ export default function Conversations({ chat, onSettings }: Props) {
   useEffect(() => {
     stick.current = true
     setConfirm(null)
-    setNotice('')
     composer.current?.focus()
   }, [thread?.id])
   useEffect(() => {
@@ -26,7 +27,7 @@ export default function Conversations({ chat, onSettings }: Props) {
     if (log && stick.current) log.scrollTop = log.scrollHeight
   }, [thread?.id, thread?.turns.length, chat.busy, chat.error])
 
-  const create = () => void chat.create().catch(e => setNotice(errorText(e)))
+  const create = () => void chat.create().catch(e => notify(errorText(e)))
   const send = () => {
     if (!thread || chat.busy || !chat.draft.trim()) return
     stick.current = true
@@ -47,14 +48,13 @@ export default function Conversations({ chat, onSettings }: Props) {
         <h1 title={thread?.title}>{thread?.title ?? '会话'}</h1>
         {collapsed && <button title="新会话" aria-label="新会话" onClick={create}><Plus size={16}/></button>}
         {thread && <button title="删除会话" aria-label="删除会话" onClick={() => setConfirm(thread.id)}><Trash2 size={15}/></button>}
-      </header>
+        {chat.storageError && <button onClick={chat.refresh}>重新载入</button>}
       {confirm && confirm === thread?.id && <div className="chat-confirm" role="group" aria-label="确认删除">
         <span>删除这段会话及全部消息？</span>
         <button onClick={() => setConfirm(null)}>取消</button>
-        <button onClick={() => void chat.remove(confirm).then(() => setConfirm(null)).catch(e => setNotice(errorText(e)))}>确认删除</button>
+        <button onClick={() => void chat.remove(confirm).then(() => setConfirm(null)).catch(e => notify(errorText(e)))}>确认删除</button>
       </div>}
-      {(chat.storageError || notice) && <div className="notice" role="alert">{chat.storageError || notice}
-        {chat.storageError && <button onClick={chat.refresh}>重新载入</button>}</div>}
+      </header>
       {thread ? <>
         <div className="chat-log" ref={scroller} onScroll={e => {
           const el = e.currentTarget
@@ -69,7 +69,6 @@ export default function Conversations({ chat, onSettings }: Props) {
             {turn.role === 'user' ? <p>{turn.text}</p> : <><b>模型回复</b><ModelResult text={turn.text}/></>}
           </article>)}
           {chat.busy && <p className="waiting" role="status">正在等待模型回复…</p>}
-          {chat.error && <p className="chat-error" role="alert">{chat.error}</p>}
           {lastUser && !chat.busy && <div className="line-actions"><button onClick={() => void chat.send(thread)}>重新发送</button>
             <button onClick={onSettings}>模型设置</button></div>}
         </div>

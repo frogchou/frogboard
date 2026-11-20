@@ -1,6 +1,7 @@
+import { useNotify } from '../feedback/Feedback';
 import { useEffect, useState } from 'react';
 import {
-  ArrowLeft, Check, ChevronDown, ChevronRight, CircleAlert, Copy, Image as ImageIcon, Laptop,
+  ArrowLeft, ChevronDown, ChevronRight, Copy, Image as ImageIcon, Laptop,
   ListFilter, Plus, Save, ScanText, Server, SlidersHorizontal, Trash2, Type,
 } from 'lucide-react';
 import {
@@ -34,21 +35,22 @@ export default function Settings({ onClose, onOpenClipboardPrivacy }: Props) {
   const [actionId, setActionId] = useState<string | null>(null);
   const [keyChanges, setKeyChanges] = useState<KeyChanges>({});
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const notify = useNotify();
+  function reportError(message: string) { setError(message); notify(message); }
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   useEffect(() => {
     let active = true;
     loadSettings().then(settings => {
       if (active) { setDraft(settings); setSaved(settings); setKeyChanges({}); setError(''); }
-    }).catch(e => { if (active) setError(e.message); });
+    }).catch(e => { if (active) reportError(e.message); });
     return () => { active = false; };
   }, [reload]);
 
   const dirty = draft !== saved || Object.keys(keyChanges).length > 0;
   function edit(data: Partial<ModelSettings>) {
     setDraft(current => current && { ...current, ...data });
-    setNotice(''); setError('');
+    setError('');
   }
   function editProfile(id: string, changes: Partial<Profile>) {
     if (!draft) return;
@@ -65,7 +67,7 @@ export default function Settings({ onClose, onOpenClipboardPrivacy }: Props) {
       if (value === undefined) delete next[id]; else next[id] = value;
       return next;
     });
-    setNotice(''); setError('');
+    setError('');
   }
   function newProfile() {
     if (!draft) return;
@@ -96,17 +98,18 @@ export default function Settings({ onClose, onOpenClipboardPrivacy }: Props) {
   async function save(): Promise<boolean> {
     if (!draft || busy) return false;
     const invalid = validationError(draft);
-    if (invalid) { setError(invalid); return false; }
-    setBusy(true); setNotice(''); setError('');
+    if (invalid) { reportError(invalid); return false; }
+    setBusy(true); setError('');
     try {
       const result = await saveSettings(draft, keyChanges);
-      setDraft(result); setSaved(result); setKeyChanges({}); setNotice('已保存');
+      setDraft(result); setSaved(result); setKeyChanges({}); notify('已保存设置', 'success');
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '无法保存设置，请重试。');
+      reportError(cause instanceof Error ? cause.message : '无法保存设置，请重试。');
       return false;
     } finally { setBusy(false); }
   }
+  const retryLoad = error && (!draft || error.includes('重新载入'));
   const models = draft?.profiles || [];
   function defaultModel(kind: InputKind) {
     const image = kind === 'image';
@@ -118,14 +121,13 @@ export default function Settings({ onClose, onOpenClipboardPrivacy }: Props) {
   }
   return <section className="fbm-settings" aria-label="模型与操作设置">
     <div className="fbm-header"><div className="fbm-heading">{onClose && <button type="button" className="fbm-icon" title="返回" aria-label="返回" onClick={onClose}><ArrowLeft size={18} /></button>}<div><h2>模型与操作</h2><p>为文字和图片选择模型，管理自己的快捷操作。</p></div></div>
-      <button type="button" className="fbm-button fbm-primary" disabled={!draft || !dirty || busy} onClick={() => void save()}>{notice ? <Check size={15} /> : <Save size={15} />}{busy ? '保存中…' : notice || '保存设置'}</button>
+      {retryLoad && <button type="button" className="fbm-button" onClick={() => setReload(r => r + 1)}>重新载入</button>}
+      <button type="button" className="fbm-button fbm-primary" disabled={!draft || !dirty || busy} onClick={() => void save()}><Save size={15} />{busy ? '保存中…' : '保存设置'}</button>
     </div>
     <div className="fbm-tabs" aria-label="设置分类">
       <button type="button" aria-pressed={tab === 'profiles'} onClick={() => setTab('profiles')}><SlidersHorizontal size={15} />模型连接</button>
       <button type="button" aria-pressed={tab === 'actions'} onClick={() => setTab('actions')}><ListFilter size={15} />提示词操作</button>
     </div>
-    {error && <div role="alert" className="fbm-error fbm-feedback"><CircleAlert size={15} /><span>{error}</span>
-      {(!draft || error.includes('重新载入')) && <button type="button" onClick={() => setReload(r => r + 1)}>重新载入</button>}</div>}
     {!draft && !error && <p className="fbm-muted" role="status">正在读取设置…</p>}
     {draft && <fieldset className="fbm-body" disabled={busy}>
       {tab === 'profiles' ? <>

@@ -20,7 +20,7 @@
 .fb-editor button:disabled { opacity: .32; cursor: default; }
 .fb-editor button:focus-visible, .fb-editor select:focus-visible { outline: 2px solid var(--fbe-green); outline-offset: 2px; }
 .fbe-header { position: absolute; inset: 14px 16px auto; display: flex; justify-content: space-between; align-items: start; pointer-events: none; }
-.fbe-identity, .fb-editor .fbe-exit, .fbe-toolbox, .fbe-hint, .fbe-error, .fbe-loading {
+.fbe-identity, .fb-editor .fbe-exit, .fbe-toolbox, .fbe-hint, .fbe-loading {
   background: #202a29f5; border: 1px solid #c5e3d72c; box-shadow: 0 4px 20px #030d1040;
 }
 .fbe-identity { display: inline-flex; align-items: center; gap: 9px; padding: 6px 12px 6px 7px; border-radius: 9px; }
@@ -31,10 +31,9 @@
 .fb-editor .fbe-exit:hover { background: #424c49; }
 .fbe-controls { position: absolute; left: 10px; right: 10px; bottom: max(16px, env(safe-area-inset-bottom)); display: flex; align-items: center; flex-direction: column; gap: 7px; pointer-events: none; }
 .fbe-controls.fbe-floating { width: max-content; max-width: calc(100% - 12px); right: auto; bottom: auto; transform: translateX(-50%); }
-.fbe-hint, .fbe-error { border-radius: 7px; padding: 6px 11px; font-size: 12px; color: #dce7e1; }
+.fbe-hint { border-radius: 7px; padding: 6px 11px; font-size: 12px; color: #dce7e1; }
 .fbe-hint { display: flex; align-items: center; gap: 12px; }
 .fbe-hint button { pointer-events: auto; color: var(--fbe-green); font-size: 12px; padding: 2px 0 2px 12px; border-left: 1px solid #ffffff2c; }
-.fbe-error { color: #ffbeb9; max-width: 90%; overflow-wrap: anywhere; }
 .fbe-toolbox { pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 0; border-radius: 12px; padding: 5px; max-width: 100%; }
 .fbe-bar, .fbe-group, .fbe-styles, .fbe-size, .fbe-palette { display: flex; align-items: center; }
 .fbe-bar { justify-content: center; flex-wrap: wrap; row-gap: 4px; }
