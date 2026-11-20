@@ -130,7 +130,7 @@ export default function Settings({ onClose, onOpenClipboardPrivacy }: Props) {
     {draft && <fieldset className="fbm-body" disabled={busy}>
       {tab === 'profiles' ? <>
         <div className="fbm-section-head"><h3>模型配置</h3><button type="button" className="fbm-button" onClick={newProfile}><Plus size={15} />添加模型</button></div>
-        {models.length === 0 && <div className="fbm-empty"><span className="fbm-symbol"><Server size={23} /></span><strong>尚未连接模型</strong><p>添加一个兼容 Chat Completions 的云端或本机服务。</p></div>}
+        {models.length === 0 && <div className="fbm-empty"><span className="fbm-symbol"><Server size={23} /></span><strong>尚未连接模型</strong><p>添加兼容 Chat Completions 或 Responses 的云端或本机服务。</p></div>}
         <div className="fbm-list">{models.map(p => {
           const expanded = profileId === p.id;
           return <div key={p.id} className="fbm-item" data-open={expanded}><button type="button" className="fbm-row" aria-expanded={expanded} onClick={() => setProfileId(expanded ? null : p.id)}>

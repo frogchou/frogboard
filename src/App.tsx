@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { ArrowDownLeft, Check, ChevronDown, Clipboard, Copy, FileImage, FileText, Keyboard, Languages, PenLine, RefreshCw, Save, Scan, Settings2, X } from 'lucide-react'
 import Editor from './editor/Editor'
-import Settings, { listActions, runAction, type Action } from './models'
+import Settings, { listActions, ModelError, runAction, type Action } from './models'
 import ShortcutSettings from './Preferences'
 import { bindDesktop, defaults, errorText, modeNames, native, type Input, type Preferences, type Snapshot } from './desktop'
 import logo from '../assets/frogboard.svg'
 
 type View = 'work' | 'editor' | 'models' | 'shortcuts'
-type Reply = { action: string; text: string; busy: boolean; error?: string }
+type Reply = { action: string; text: string; busy: boolean; error?: string; errorCode?: string }
 
 export default function App() {
   const [view, setView] = useState<View>('work')
@@ -40,7 +40,7 @@ export default function App() {
       if (request.current === controller) setReply({ action: name, text, busy: false })
     } catch (e) {
       if (request.current === controller && !controller.signal.aborted)
-        setReply({ action: name, text: '', busy: false, error: errorText(e) })
+        setReply({ action: name, text: '', busy: false, error: errorText(e), errorCode: e instanceof ModelError ? e.code : undefined })
     }
   }
   function accept(next: Snapshot) {
@@ -143,7 +143,8 @@ export default function App() {
         <button onClick={() => report(invoke('copy_text', { text: reply.text }), '已复制结果')}><Copy size={14}/> 复制</button>}
     </div>
     {reply.busy ? <p className="waiting">正在等待模型响应…</p> : reply.error ? <>
-      <p>{reply.error}</p><div className="line-actions"><button onClick={() => openView('models')}>模型设置</button>
+      <p>{reply.error}</p><div className="line-actions">{['unconfigured', 'profile', 'auth', 'credential', 'endpoint'].includes(reply.errorCode ?? '') &&
+        <button onClick={() => openView('models')}>模型设置</button>}
       <button onClick={() => execute(lastAction.current, valid, reply.action)}>重试</button></div>
     </> : <pre>{reply.text}</pre>}
   </section>

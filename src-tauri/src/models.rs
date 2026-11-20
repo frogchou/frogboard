@@ -1,4 +1,5 @@
 mod credentials;
+mod responses;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{redirect::Policy, Client, StatusCode};
@@ -22,11 +23,14 @@ use url::Url;
 #[derive(Debug, Serialize)]
 pub struct ModelError {
     code: &'static str,
-    message: &'static str,
+    message: String,
 }
 type ModelResult<T> = Result<T, ModelError>;
 fn error(code: &'static str, message: &'static str) -> ModelError {
-    ModelError { code, message }
+    ModelError {
+        code,
+        message: message.to_owned(),
+    }
 }
 fn storage_error() -> ModelError {
     error(
@@ -168,6 +172,20 @@ fn load(path: &Path) -> ModelResult<Store> {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .map(|mut store: Store| {
                 restore_required_actions(&mut store.settings);
+                for profile in &store.settings.profiles {
+                    let Some(key) = store.keys.get_mut(&profile.id) else {
+                        continue;
+                    };
+                    let Ok(url) = endpoint_url(&profile.endpoint) else {
+                        continue;
+                    };
+                    // Older versions appended the chat suffix even to an explicit Responses URL.
+                    if url.path().ends_with("/responses")
+                        && key.endpoint == format!("{url}/chat/completions")
+                    {
+                        key.endpoint = url.to_string();
+                    }
+                }
                 store
             })
             .map_err(|_| {
@@ -216,7 +234,7 @@ fn endpoint_url(raw: &str) -> ModelResult<Url> {
         return Err(invalid());
     }
     let path = url.path().trim_end_matches('/');
-    let full_path = if path.ends_with("/chat/completions") {
+    let full_path = if path.ends_with("/chat/completions") || path.ends_with("/responses") {
         path.to_owned()
     } else {
         format!("{path}/chat/completions")
@@ -386,11 +404,9 @@ pub struct ActionInput {
     value: String,
 }
 
-fn content(input: ActionInput) -> ModelResult<Value> {
+fn validate_input(input: &ActionInput) -> ModelResult<()> {
     match input.kind {
-        Kind::Text if !input.value.trim().is_empty() && input.value.len() <= 1024 * 1024 => {
-            Ok(Value::String(input.value))
-        }
+        Kind::Text if !input.value.trim().is_empty() && input.value.len() <= 1024 * 1024 => Ok(()),
         Kind::Text => Err(error("input", "请输入非空文本，每次最多处理 1 MB。")),
         Kind::Image => {
             let (prefix, data) = input.value.split_once(',').unwrap_or_default();
@@ -410,13 +426,14 @@ fn content(input: ActionInput) -> ModelResult<Value> {
             if !matches_format {
                 return Err(invalid());
             }
-            Ok(json!([{"type":"image_url","image_url":{"url":input.value}}]))
+            Ok(())
         }
     }
 }
 
 struct Call {
     url: Url,
+    auto_protocol: bool,
     key: Option<String>,
     model: String,
     prompt: String,
@@ -439,8 +456,12 @@ fn model_for_action<'a>(settings: &'a Settings, action: &Action) -> Option<&'a P
 }
 
 fn resolve_call(app: &AppHandle, action_id: &str, kind: Kind) -> ModelResult<Call> {
+    resolve_stored_call(&settings_path(app)?, action_id, kind)
+}
+
+fn resolve_stored_call(path: &Path, action_id: &str, kind: Kind) -> ModelResult<Call> {
     let _guard = SETTINGS_LOCK.lock().map_err(|_| storage_error())?;
-    let store = load(&settings_path(app)?)?;
+    let store = load(path)?;
     let action = store
         .settings
         .actions
@@ -464,6 +485,11 @@ fn resolve_call(app: &AppHandle, action_id: &str, kind: Kind) -> ModelResult<Cal
         .map(|k| credentials::read(&k.target))
         .transpose()?;
     Ok(Call {
+        auto_protocol: !profile
+            .endpoint
+            .trim()
+            .trim_end_matches('/')
+            .ends_with("/chat/completions"),
         url,
         key,
         model: profile.model.trim().to_owned(),
@@ -479,8 +505,52 @@ fn network_error(err: reqwest::Error) -> ModelError {
     }
 }
 
+fn provider_error(status: StatusCode, model: &str, body: &[u8], key: Option<&str>) -> ModelError {
+    let (code, advice) = match status {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => ("auth", "请检查 API 密钥与模型权限。"),
+        StatusCode::TOO_MANY_REQUESTS => ("rate_limit", "已达到请求或配额限制。"),
+        StatusCode::NOT_FOUND => ("endpoint", "请核对服务端的模型 ID 和接口地址。"),
+        StatusCode::PAYLOAD_TOO_LARGE => ("input", "请缩小图片或缩短文字。"),
+        s if s.is_server_error() => ("provider", "模型服务处理请求失败。"),
+        s if s.is_redirection() => ("endpoint", "请使用服务的最终接口地址。"),
+        _ => ("provider", "服务未接受此次请求。"),
+    };
+    let mut message = format!("模型 {model} 的服务返回 HTTP {}。{advice}", status.as_u16());
+    if let Ok(json) = serde_json::from_slice::<Value>(body) {
+        let detail = json
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .or_else(|| json.get("message").and_then(Value::as_str))
+            .or_else(|| json.get("error").and_then(Value::as_str));
+        if let Some(detail) = detail.map(str::trim).filter(|s| !s.is_empty()) {
+            let clean = match key.filter(|key| !key.is_empty()) {
+                Some(key) => detail.replace(key, "[已隐藏]"),
+                None => detail.to_owned(),
+            };
+            let clean = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+            let mut chars = clean.chars();
+            message.push_str(" 服务说明：");
+            message.extend(chars.by_ref().take(400));
+            if chars.next().is_some() {
+                message.push('…');
+            }
+        }
+    }
+    let code = if matches!(status.as_u16(), 400 | 404 | 422 | 500 | 501)
+        && responses::chat_endpoint_rejected(body)
+    {
+        "chat_unsupported"
+    } else {
+        code
+    };
+    ModelError { code, message }
+}
+
+static RESPONSES_ROUTES: LazyLock<Mutex<HashSet<(Url, String)>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
 async fn request(call: Call, input: ActionInput) -> ModelResult<String> {
-    let body = json!({ "model":call.model,"stream":false,"messages":[{"role":"system","content":call.prompt},{"role":"user","content":content(input)?}] });
+    validate_input(&input)?;
     let mut builder = Client::builder()
         .redirect(Policy::none())
         .timeout(Duration::from_secs(90))
@@ -489,34 +559,61 @@ async fn request(call: Call, input: ActionInput) -> ModelResult<String> {
         builder = builder.no_proxy();
     }
     let client = builder.build().map_err(network_error)?;
-    let mut req = client.post(call.url).json(&body);
-    if let Some(key) = call.key {
+    let route = (call.url.clone(), call.model.clone());
+    let direct = call.url.path().ends_with("/responses");
+    let known = call.auto_protocol && RESPONSES_ROUTES.lock().unwrap().contains(&route);
+    if direct || known {
+        return send_request(&client, &call, &input, true).await;
+    }
+    match send_request(&client, &call, &input, false).await {
+        Err(e) if call.auto_protocol && e.code == "chat_unsupported" => {
+            let text = send_request(&client, &call, &input, true).await?;
+            RESPONSES_ROUTES.lock().unwrap().insert(route);
+            Ok(text)
+        }
+        result => result,
+    }
+}
+
+async fn send_request(
+    client: &Client,
+    call: &Call,
+    input: &ActionInput,
+    use_responses: bool,
+) -> ModelResult<String> {
+    let (url, body) = if use_responses {
+        (responses::url(&call.url), responses::body(call, input))
+    } else {
+        let content = match input.kind {
+            Kind::Text => json!(input.value),
+            Kind::Image => json!([{"type":"image_url","image_url":{"url":input.value}}]),
+        };
+        (
+            call.url.clone(),
+            json!({ "model":call.model,"stream":false,"messages":[{"role":"system","content":call.prompt},{"role":"user","content":content}] }),
+        )
+    };
+    let mut req = client.post(url).json(&body);
+    if let Some(key) = &call.key {
         req = req.bearer_auth(key);
     }
     let mut response = req.send().await.map_err(network_error)?;
-    if !response.status().is_success() {
-        return Err(match response.status() {
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                error("auth", "服务拒绝了请求，请检查 API 密钥与模型权限。")
+    let status = response.status();
+    if !status.is_success() {
+        let mut body = Vec::new();
+        while let Ok(Some(chunk)) = response.chunk().await {
+            if body.len() + chunk.len() > 16 * 1024 {
+                body.clear();
+                break;
             }
-            StatusCode::TOO_MANY_REQUESTS => {
-                error("rate_limit", "已达到服务的请求或配额限制，请稍后重试。")
-            }
-            StatusCode::NOT_FOUND => {
-                error("endpoint", "未找到模型或接口，请检查模型 ID 与接口地址。")
-            }
-            StatusCode::PAYLOAD_TOO_LARGE => {
-                error("input", "内容超过服务限制，请缩小图片或缩短文字。")
-            }
-            s if s.is_server_error() => error("provider", "模型服务暂时不可用，请稍后重试。"),
-            s if s.is_redirection() => {
-                error("endpoint", "服务返回重定向，请将最终地址直接填入模型配置。")
-            }
-            _ => error(
-                "provider",
-                "服务未接受请求，请检查接口与输入是否受此模型支持。",
-            ),
-        });
+            body.extend_from_slice(&chunk);
+        }
+        return Err(provider_error(
+            status,
+            &call.model,
+            &body,
+            call.key.as_deref(),
+        ));
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(network_error)? {
@@ -524,6 +621,9 @@ async fn request(call: Call, input: ActionInput) -> ModelResult<String> {
             return Err(error("response", "模型输出过长，请缩短输入或提示词。"));
         }
         bytes.extend_from_slice(&chunk);
+    }
+    if use_responses {
+        return responses::text(&bytes);
     }
     let result: Value = serde_json::from_slice(&bytes).map_err(|_| format_error())?;
     let value = result
@@ -607,8 +707,62 @@ mod tests {
     use std::io::{BufRead, BufReader, Read};
     use std::net::TcpListener;
 
-    #[tokio::test]
-    async fn submits_one_explicit_message_to_local_compatible_service() {
+    #[test]
+    fn saved_multimodal_profile_resolves_for_translation_and_ocr() {
+        let path = std::env::temp_dir().join(format!("frogboard-test-{}.json", unique_id()));
+        let mut store = Store::default();
+        let id = "shared-profile".to_owned();
+        store.settings.profiles.push(Profile {
+            id: id.clone(),
+            name: "通用模型".into(),
+            endpoint: "http://localhost:8080/v1".into(),
+            model: "test-vision".into(),
+            vision: true,
+            provider: "openai".into(),
+            has_key: false,
+        });
+        store.settings.default_text = Some(id.clone());
+        store.settings.default_vision = Some(id);
+        store_file(&path, &store).unwrap();
+        for (action, kind) in [
+            ("translate", Kind::Text),
+            ("ocr", Kind::Image),
+            ("image-translate", Kind::Image),
+        ] {
+            let call = resolve_stored_call(&path, action, kind).unwrap();
+            assert_eq!(call.model, "test-vision");
+            assert_eq!(call.url.path(), "/v1/chat/completions");
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn upstream_failure_shows_status_and_safe_detail() {
+        let failure = provider_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "vision-model",
+            br#"{"error":{"message":"upstream failed for sentinel-key"}}"#,
+            Some("sentinel-key"),
+        );
+        assert_eq!(failure.code, "provider");
+        assert!(failure.message.contains("vision-model") && failure.message.contains("HTTP 500"));
+        assert!(
+            failure.message.contains("upstream failed")
+                && !failure.message.contains("sentinel-key")
+        );
+        let gateway = provider_error(
+            StatusCode::BAD_GATEWAY,
+            "text-model",
+            b"<html>gateway</html>",
+            None,
+        );
+        assert!(gateway.message.contains("HTTP 502") && !gateway.message.contains("<html>"));
+    }
+
+    async fn call_local_service(
+        status: &'static str,
+        response: &'static str,
+    ) -> ModelResult<String> {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = endpoint_url(&format!("http://{}/v1", listener.local_addr().unwrap())).unwrap();
         let server = std::thread::spawn(move || {
@@ -639,11 +793,11 @@ mod tests {
             assert_eq!(input["model"], "offline-test");
             assert_eq!(input["messages"][0]["content"], "摘要");
             assert_eq!(input["messages"][1]["content"], "测试文字");
-            let response = r#"{"choices":[{"message":{"content":"测试通过"}}]}"#;
-            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", response.len(), response).unwrap();
+            write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", response.len(), response).unwrap();
         });
         let call = Call {
             url,
+            auto_protocol: true,
             key: None,
             model: "offline-test".into(),
             prompt: "摘要".into(),
@@ -655,9 +809,106 @@ mod tests {
                 value: "测试文字".into(),
             },
         )
+        .await;
+        server.join().unwrap();
+        text
+    }
+
+    #[tokio::test]
+    async fn submits_one_explicit_message_to_local_compatible_service() {
+        let text = call_local_service(
+            "200 OK",
+            r#"{"choices":[{"message":{"content":"测试通过"}}]}"#,
+        )
         .await
         .unwrap();
         assert_eq!(text, "测试通过");
+    }
+
+    #[tokio::test]
+    async fn keeps_service_failure_distinct_from_missing_local_configuration() {
+        let failure = call_local_service(
+            "500 Internal Server Error",
+            r#"{"error":{"message":"model worker unavailable"}}"#,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(failure.code, "provider");
+        assert!(
+            failure.message.contains("HTTP 500")
+                && failure.message.contains("model worker unavailable")
+        );
+    }
+
+    #[tokio::test]
+    async fn codex_route_translates_then_recognizes_images_with_the_same_saved_model() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = endpoint_url(&format!(
+            "http://{}/gateway/v1",
+            listener.local_addr().unwrap()
+        ))
+        .unwrap();
+        let server = std::thread::spawn(move || {
+            for step in 0..3 {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut reader = BufReader::new(&stream);
+                let mut headers = Vec::new();
+                for line in reader.by_ref().lines() {
+                    let line = line.unwrap();
+                    if line.is_empty() {
+                        break;
+                    }
+                    headers.push(line);
+                }
+                let length = headers
+                    .iter()
+                    .filter_map(|h| h.split_once(':'))
+                    .find(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+                    .unwrap()
+                    .1
+                    .trim()
+                    .parse()
+                    .unwrap();
+                let mut bytes = vec![0; length];
+                reader.read_exact(&mut bytes).unwrap();
+                let request: Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(request["model"], "test-vision");
+                let (status, response) = if step == 0 {
+                    assert!(headers[0].starts_with("POST /gateway/v1/chat/completions "));
+                    (
+                        "500 Internal Server Error",
+                        json!({"error":{"code":"convert_request_failed","message":"codex channel: /v1/chat/completions endpoint not supported (request id: fixture)"}}),
+                    )
+                } else {
+                    assert!(headers[0].starts_with("POST /gateway/v1/responses "));
+                    assert_eq!(request["instructions"], "test instruction");
+                    assert_eq!(request["store"], false);
+                    let part = &request["input"][0]["content"][0];
+                    if step == 1 {
+                        assert_eq!(part, &json!({"type":"input_text","text":"Hello"}));
+                    } else {
+                        assert_eq!(part["type"], "input_image");
+                        assert!(part["image_url"]
+                            .as_str()
+                            .unwrap()
+                            .starts_with("data:image/png;base64,"));
+                    }
+                    (
+                        "200 OK",
+                        json!({"output":[{"type":"message","content":[{"type":"output_text","text":"success"}]}]}),
+                    )
+                };
+                let body = response.to_string();
+                write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        for (kind, value) in [(Kind::Text, "Hello"), (Kind::Image, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6YkAAAAASUVORK5CYII=")] {
+            let call = Call {url:url.clone(),auto_protocol:true,key:None,model:"test-vision".into(),prompt:"test instruction".into()};
+            assert_eq!(request(call, ActionInput {kind,value:value.into()}).await.unwrap(), "success");
+        }
         server.join().unwrap();
     }
 
@@ -715,13 +966,13 @@ mod tests {
             "data:image/png;base64,@@@@",
             "data:image/webp;base64,AAAA",
         ] {
-            assert!(content(ActionInput {
+            assert!(validate_input(&ActionInput {
                 kind: Kind::Image,
                 value: value.to_owned()
             })
             .is_err());
         }
-        assert!(content(ActionInput {
+        assert!(validate_input(&ActionInput {
             kind: Kind::Image,
             value: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6YkAAAAASUVORK5CYII=".into()
         })
