@@ -9,7 +9,7 @@ use windows::Win32::{
 // No single-instance plugin, global shortcuts, clipboard reads or model calls.
 #[test]
 #[ignore = "requires an interactive Windows desktop with WebView2"]
-fn closing_translation_preserves_compact_geometry_until_reopened() {
+fn translation_shares_workbench_size_and_hides_in_place() {
     let mut context = tauri::generate_context!();
     context.config_mut().identifier = "com.frogchou.frogboard.window-test".into();
     let config = &mut context.config_mut().app.windows[0];
@@ -28,16 +28,34 @@ fn closing_translation_preserves_compact_geometry_until_reopened() {
             thread::spawn(move || {
                 let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let window = main_window(&app).unwrap();
-                    for maximized in [false, true] {
+                    for (custom_size, maximized) in [(false, false), (true, false), (false, true)] {
+                        if custom_size {
+                            window.set_size(tauri::LogicalSize::new(880, 620)).unwrap();
+                        }
                         if maximized {
                             window.maximize().unwrap();
                         }
-                        let original = window.inner_size().unwrap();
+                        let logical_size = || {
+                            window
+                                .inner_size()
+                                .unwrap()
+                                .to_logical::<f64>(window.scale_factor().unwrap())
+                        };
+                        let original = logical_size();
                         let position = window.outer_position().unwrap();
                         let id = next_request();
-                        with_current_window(&window, id, compact).unwrap();
-                        let small = window.inner_size().unwrap();
-                        assert_ne!(original, small);
+                        with_current_window(&window, id, position_translation).unwrap();
+                        assert_eq!(window.is_maximized().unwrap(), maximized);
+                        assert!((logical_size().width - original.width).abs() <= 1.0);
+                        assert!((logical_size().height - original.height).abs() <= 1.0);
+                        if custom_size {
+                            window.set_size(tauri::LogicalSize::new(840, 610)).unwrap();
+                            with_current_window(&window, id, position_translation).unwrap();
+                            assert!((logical_size().width - 840.0).abs() <= 1.0);
+                            assert!((logical_size().height - 610.0).abs() <= 1.0);
+                        }
+                        let translated = logical_size();
+                        let before_close = window.outer_position().unwrap();
                         unsafe {
                             PostMessageW(
                                 Some(native_owner(&window).unwrap()),
@@ -55,15 +73,17 @@ fn closing_translation_preserves_compact_geometry_until_reopened() {
                             );
                             thread::sleep(Duration::from_millis(10));
                         }
+                        assert_eq!(logical_size(), translated, "close resized the window");
                         assert_eq!(
-                            window.inner_size().unwrap(),
-                            small,
-                            "close resized the popup"
+                            window.outer_position().unwrap(),
+                            before_close,
+                            "close moved the window"
                         );
                         reopen(&app).unwrap();
                         assert!(window.is_visible().unwrap());
                         assert_eq!(window.is_maximized().unwrap(), maximized);
-                        assert_eq!(window.inner_size().unwrap(), original);
+                        assert!((logical_size().width - translated.width).abs() <= 1.0);
+                        assert!((logical_size().height - translated.height).abs() <= 1.0);
                         assert_eq!(window.outer_position().unwrap(), position);
                     }
                 }));

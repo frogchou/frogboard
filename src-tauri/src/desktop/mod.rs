@@ -42,14 +42,8 @@ pub struct FrogInput {
 static CURRENT: AtomicU32 = AtomicU32::new(0);
 static PENDING: Mutex<Option<Arc<FrogInput>>> = Mutex::new(None);
 static CAPTURE: Mutex<()> = Mutex::new(());
-// Preserve the user's normal working size and location while a translation
-// result is shown near the pointer, including a previously maximized panel.
-struct Layout {
-    position: tauri::PhysicalPosition<i32>,
-    size: tauri::PhysicalSize<u32>,
-    maximized: bool,
-}
-static BEFORE_COMPACT: Mutex<Option<Layout>> = Mutex::new(None);
+// Both views share the window's size. Only its position changes for translation.
+static WORKBENCH_POSITION: Mutex<Option<tauri::PhysicalPosition<i32>>> = Mutex::new(None);
 
 fn err(e: impl Display) -> String {
     e.to_string()
@@ -127,48 +121,45 @@ fn leave_fullscreen(window: &WebviewWindow) -> Result<(), String> {
 
 fn restore(window: &WebviewWindow) -> Result<(), String> {
     leave_fullscreen(window)?;
-    let layout = BEFORE_COMPACT
+    let position = WORKBENCH_POSITION
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .take();
-    if let Some(layout) = layout {
-        window.set_position(layout.position).map_err(err)?;
-        window.set_size(layout.size).map_err(err)?;
-        if layout.maximized {
-            window.maximize().map_err(err)?;
+    if let Some(position) = position {
+        if !window.is_maximized().map_err(err)? {
+            window.set_position(position).map_err(err)?;
         }
     }
     Ok(())
 }
 
-fn compact(window: &WebviewWindow) -> Result<(), String> {
+fn position_translation(window: &WebviewWindow) -> Result<(), String> {
     leave_fullscreen(window)?;
-    let need_layout = BEFORE_COMPACT
+    if window.is_minimized().map_err(err)? {
+        window.unminimize().map_err(err)?;
+    }
+    if window.is_maximized().map_err(err)? {
+        return Ok(());
+    }
+    let position = window.outer_position().map_err(err)?;
+    WORKBENCH_POSITION
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .is_none();
-    if need_layout {
-        let maximized = window.is_maximized().map_err(err)?;
-        if maximized {
-            window.unmaximize().map_err(err)?;
-        }
-        let layout = Layout {
-            position: window.outer_position().map_err(err)?,
-            size: window.inner_size().map_err(err)?,
-            maximized,
-        };
-        *BEFORE_COMPACT.lock().unwrap_or_else(|e| e.into_inner()) = Some(layout);
-    }
+        .get_or_insert(position);
     let cursor = capture::cursor()?;
-    let work = capture::monitor(cursor)?.rcWork;
-    // Cross the DPI boundary before requesting a logical size. The outer size
-    // then includes the real non-client border at the destination monitor's DPI.
-    window
-        .set_position(tauri::PhysicalPosition::new(work.left, work.top))
-        .map_err(err)?;
-    window
-        .set_size(tauri::LogicalSize::new(540.0, 390.0))
-        .map_err(err)?;
+    let monitor = capture::monitor(cursor)?;
+    let work = monitor.rcWork;
+    let origin = tauri::PhysicalPosition::new(monitor.rcMonitor.left, monitor.rcMonitor.top);
+    if !window
+        .current_monitor()
+        .map_err(err)?
+        .is_some_and(|m| *m.position() == origin)
+    {
+        // Let Windows apply the destination DPI before measuring the outer frame.
+        window
+            .set_position(tauri::PhysicalPosition::new(work.left, work.top))
+            .map_err(err)?;
+    }
     let size = window.outer_size().map_err(err)?;
     let x = (cursor.x + 14).clamp(work.left, (work.right - size.width as i32).max(work.left));
     let y = (cursor.y + 14).clamp(work.top, (work.bottom - size.height as i32).max(work.top));
@@ -192,8 +183,7 @@ pub fn reopen(app: &AppHandle) -> Result<(), String> {
 pub fn hide_panel(app: AppHandle) -> Result<(), String> {
     let id = next_request();
     let window = main_window(&app)?;
-    // Restoring a maximized workbench can show its HWND. Leave the layout
-    // alone until an entry point actually needs the workbench again.
+    // Hide in place so the workbench never flashes at its original position.
     window.hide().map_err(err)?;
     window.emit("frog-dismiss", id).map_err(err)
 }
@@ -327,7 +317,7 @@ fn run(
             target.set_fullscreen_on_monitor(point).map_err(err)?;
             target.set_always_on_top(true).map_err(err)
         } else if kind == "text" && matches!(mode, "translate" | "selection") {
-            compact(target)
+            position_translation(target)
         } else {
             restore(target)
         }
